@@ -1,33 +1,86 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GameBootstrap : MonoBehaviour
 {
-    private bool gameStarted = false;
-    private Texture2D backgroundTexture;
+    private enum GameState
+    {
+        MainMenu,
+        Playing
+    }
+
+    private enum BuildingType
+    {
+        None,
+        Factory
+    }
+
+    [Header("Map Settings")]
+    [SerializeField] private int mapSize = 32;
+    [SerializeField] private float cellSize = 1f;
+
+    [Header("Base Settings")]
+    [SerializeField] private float baseRadius = 0.45f;
+    [SerializeField] private float buildRadius = 7f;
+
+    [Header("Building Settings")]
+    [SerializeField] private float buildingRadius = 0.42f;
+
+    private GameState gameState = GameState.MainMenu;
+    private BuildingType selectedBuilding = BuildingType.None;
+
+    private Camera mainCamera;
+
+    private Transform gridRoot;
+    private Transform buildingRoot;
+
+    private Sprite circleSprite;
+    private Texture2D menuBackgroundTexture;
+
+    private GameObject baseObject;
+    private GameObject buildRangeObject;
+    private GameObject placementPreviewObject;
+
+    private Vector2 basePosition;
+    private Vector2 currentPreviewPosition;
+    private Vector2Int currentPreviewCell;
+
+    private bool isBuildMenuOpen = false;
+    private bool hasPreviewCell = false;
+    private bool gameWorldCreated = false;
+
+    private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
 
     private void Awake()
     {
-        backgroundTexture = new Texture2D(2, 2);
-        backgroundTexture.SetPixel(0, 0, new Color(0.03f, 0.04f, 0.06f));
-        backgroundTexture.SetPixel(1, 0, new Color(0.05f, 0.08f, 0.12f));
-        backgroundTexture.SetPixel(0, 1, new Color(0.08f, 0.12f, 0.18f));
-        backgroundTexture.SetPixel(1, 1, new Color(0.04f, 0.05f, 0.07f));
-        backgroundTexture.Apply();
+        mainCamera = Camera.main;
 
-        Camera.main.orthographic = true;
-        Camera.main.transform.position = new Vector3(0, 0, -10);
-        Camera.main.orthographicSize = 10;
+        circleSprite = CreateCircleSprite(128);
+        menuBackgroundTexture = CreateMenuBackgroundTexture();
+
+        SetupCamera();
+    }
+
+    private void Update()
+    {
+        if (gameState != GameState.Playing)
+        {
+            return;
+        }
+
+        HandlePlacementPreview();
+        HandlePlacementConfirm();
     }
 
     private void OnGUI()
     {
-        if (!gameStarted)
+        if (gameState == GameState.MainMenu)
         {
             DrawMainMenu();
         }
         else
         {
-            DrawGameScreen();
+            DrawGameUI();
         }
     }
 
@@ -35,13 +88,15 @@ public class GameBootstrap : MonoBehaviour
     {
         GUI.DrawTexture(
             new Rect(0, 0, Screen.width, Screen.height),
-            backgroundTexture,
+            menuBackgroundTexture,
             ScaleMode.StretchToFill
         );
 
-        GUIStyle titleStyle = new GUIStyle(GUI.skin.label);
-        titleStyle.fontSize = 42;
-        titleStyle.alignment = TextAnchor.MiddleCenter;
+        GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 42,
+            alignment = TextAnchor.MiddleCenter
+        };
         titleStyle.normal.textColor = Color.white;
 
         GUI.Label(
@@ -50,8 +105,10 @@ public class GameBootstrap : MonoBehaviour
             titleStyle
         );
 
-        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-        buttonStyle.fontSize = 28;
+        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = 28
+        };
 
         Rect startButtonRect = new Rect(
             (Screen.width - 220) / 2f,
@@ -62,13 +119,473 @@ public class GameBootstrap : MonoBehaviour
 
         if (GUI.Button(startButtonRect, "开始", buttonStyle))
         {
-            gameStarted = true;
-            Debug.Log("Game started.");
+            StartGame();
         }
     }
 
-    private void DrawGameScreen()
+    private void DrawGameUI()
     {
-        GUI.Label(new Rect(20, 20, 400, 40), "游戏地图界面已进入");
+        float panelWidth = 180f;
+        float panelHeight = 230f;
+        float panelX = Screen.width - panelWidth - 20f;
+        float panelY = 20f;
+
+        GUI.Box(new Rect(panelX, panelY, panelWidth, panelHeight), "建造菜单");
+
+        Rect dropdownRect = new Rect(panelX + 15f, panelY + 40f, panelWidth - 30f, 35f);
+
+        if (GUI.Button(dropdownRect, isBuildMenuOpen ? "建筑菜单 ▲" : "建筑菜单 ▼"))
+        {
+            isBuildMenuOpen = !isBuildMenuOpen;
+        }
+
+        if (isBuildMenuOpen)
+        {
+            Rect factoryRect = new Rect(panelX + 15f, panelY + 80f, panelWidth - 30f, 35f);
+
+            if (GUI.Button(factoryRect, "兵厂"))
+            {
+                SelectFactory();
+                isBuildMenuOpen = false;
+            }
+        }
+
+        string selectedText = selectedBuilding == BuildingType.Factory
+            ? "当前：兵厂"
+            : "当前：无";
+
+        GUI.Label(new Rect(panelX + 15f, panelY + 130f, panelWidth - 30f, 25f), selectedText);
+
+        if (selectedBuilding != BuildingType.None)
+        {
+            Rect cancelRect = new Rect(panelX + 15f, panelY + 165f, panelWidth - 30f, 35f);
+
+            if (GUI.Button(cancelRect, "取消建造"))
+            {
+                CancelBuildMode();
+            }
+        }
+
+        GUI.Label(
+            new Rect(20, 20, 650, 30),
+            "操作提示：点击右侧“建筑菜单” → 选择“兵厂” → 移动鼠标预览 → 鼠标右键确认建造。"
+        );
+    }
+
+    private void StartGame()
+    {
+        gameState = GameState.Playing;
+
+        if (!gameWorldCreated)
+        {
+            CreateGameWorld();
+            gameWorldCreated = true;
+        }
+
+        Debug.Log("Game started.");
+    }
+
+    private void CreateGameWorld()
+    {
+        gridRoot = new GameObject("GridRoot").transform;
+        buildingRoot = new GameObject("BuildingRoot").transform;
+
+        CreateGrid();
+        CreateBase();
+        CreateBuildRangeObject();
+        CreatePlacementPreviewObject();
+    }
+
+    private void SetupCamera()
+    {
+        if (mainCamera == null)
+        {
+            Debug.LogError("No Main Camera found.");
+            return;
+        }
+
+        mainCamera.orthographic = true;
+        mainCamera.transform.position = new Vector3(0, 0, -10);
+        mainCamera.orthographicSize = 18f;
+        mainCamera.backgroundColor = new Color(0.08f, 0.08f, 0.09f);
+    }
+
+    private void CreateGrid()
+    {
+        float half = GetMapHalfSize();
+
+        Material lineMaterial = new Material(Shader.Find("Sprites/Default"));
+
+        for (int i = 0; i <= mapSize; i++)
+        {
+            float position = -half + i * cellSize;
+
+            CreateLine(
+                new Vector3(position, -half, 0),
+                new Vector3(position, half, 0),
+                lineMaterial
+            );
+
+            CreateLine(
+                new Vector3(-half, position, 0),
+                new Vector3(half, position, 0),
+                lineMaterial
+            );
+        }
+
+        Debug.Log($"Grid created: {mapSize} x {mapSize}");
+    }
+
+    private void CreateLine(Vector3 start, Vector3 end, Material material)
+    {
+        GameObject lineObject = new GameObject("GridLine");
+        lineObject.transform.SetParent(gridRoot);
+
+        LineRenderer lineRenderer = lineObject.AddComponent<LineRenderer>();
+        lineRenderer.material = material;
+        lineRenderer.positionCount = 2;
+        lineRenderer.SetPosition(0, start);
+        lineRenderer.SetPosition(1, end);
+        lineRenderer.startWidth = 0.025f;
+        lineRenderer.endWidth = 0.025f;
+        lineRenderer.startColor = new Color(1f, 1f, 1f, 0.15f);
+        lineRenderer.endColor = new Color(1f, 1f, 1f, 0.15f);
+        lineRenderer.sortingOrder = -10;
+    }
+
+    private void CreateBase()
+    {
+        float half = GetMapHalfSize();
+
+        basePosition = new Vector2(
+            half - cellSize * 2.5f,
+            half - cellSize * 2.5f
+        );
+
+        Vector2Int baseCell = WorldToCell(basePosition);
+        occupiedCells.Add(baseCell);
+
+        baseObject = CreateCircleObject(
+            "Base",
+            basePosition,
+            baseRadius,
+            new Color(0.25f, 0.55f, 1f, 1f),
+            20,
+            buildingRoot
+        );
+
+        CreateWorldLabel(baseObject.transform, "基地", Color.white);
+
+        Debug.Log($"Base created at cell {baseCell}");
+    }
+
+    private void CreateBuildRangeObject()
+    {
+        buildRangeObject = CreateCircleObject(
+            "BuildRange",
+            basePosition,
+            buildRadius,
+            new Color(0.2f, 1f, 0.35f, 0.16f),
+            0,
+            buildingRoot
+        );
+
+        buildRangeObject.SetActive(false);
+    }
+
+    private void CreatePlacementPreviewObject()
+    {
+        placementPreviewObject = CreateCircleObject(
+            "PlacementPreview",
+            Vector2.zero,
+            buildingRadius,
+            new Color(0.2f, 1f, 0.35f, 0.45f),
+            30,
+            buildingRoot
+        );
+
+        placementPreviewObject.SetActive(false);
+    }
+
+    private void SelectFactory()
+    {
+        selectedBuilding = BuildingType.Factory;
+        hasPreviewCell = false;
+
+        if (buildRangeObject != null)
+        {
+            buildRangeObject.SetActive(true);
+        }
+
+        if (placementPreviewObject != null)
+        {
+            placementPreviewObject.SetActive(true);
+        }
+
+        Debug.Log("Selected building: Factory / 兵厂");
+    }
+
+    private void CancelBuildMode()
+    {
+        selectedBuilding = BuildingType.None;
+        hasPreviewCell = false;
+
+        if (buildRangeObject != null)
+        {
+            buildRangeObject.SetActive(false);
+        }
+
+        if (placementPreviewObject != null)
+        {
+            placementPreviewObject.SetActive(false);
+        }
+
+        Debug.Log("Build mode cancelled.");
+    }
+
+    private void HandlePlacementPreview()
+    {
+        if (selectedBuilding == BuildingType.None)
+        {
+            return;
+        }
+
+        Vector2 mouseWorldPosition = GetMouseWorldPosition();
+
+        if (!IsInsideMap(mouseWorldPosition))
+        {
+            hasPreviewCell = false;
+            SetPlacementPreviewVisible(false);
+            return;
+        }
+
+        currentPreviewCell = WorldToCell(mouseWorldPosition);
+        currentPreviewPosition = CellToWorld(currentPreviewCell);
+        hasPreviewCell = true;
+
+        SetPlacementPreviewVisible(true);
+
+        placementPreviewObject.transform.position = new Vector3(
+            currentPreviewPosition.x,
+            currentPreviewPosition.y,
+            -0.2f
+        );
+
+        bool canBuild = CanBuildAt(currentPreviewPosition, currentPreviewCell);
+        SetPlacementPreviewColor(canBuild);
+    }
+
+    private void HandlePlacementConfirm()
+    {
+        if (selectedBuilding == BuildingType.None)
+        {
+            return;
+        }
+
+        if (!Input.GetMouseButtonDown(1))
+        {
+            return;
+        }
+
+        if (!hasPreviewCell)
+        {
+            Debug.LogWarning("Cannot build: mouse is outside the map.");
+            return;
+        }
+
+        bool canBuild = CanBuildAt(currentPreviewPosition, currentPreviewCell);
+
+        if (!canBuild)
+        {
+            Debug.LogWarning("Cannot build here: out of range or cell is occupied.");
+            return;
+        }
+
+        BuildFactory(currentPreviewPosition, currentPreviewCell);
+    }
+
+    private void BuildFactory(Vector2 position, Vector2Int cell)
+    {
+        GameObject factoryObject = CreateCircleObject(
+            "Factory",
+            position,
+            buildingRadius,
+            new Color(0.35f, 0.9f, 0.45f, 1f),
+            20,
+            buildingRoot
+        );
+
+        CreateWorldLabel(factoryObject.transform, "兵厂", Color.black);
+
+        occupiedCells.Add(cell);
+
+        Debug.Log($"Factory built at cell {cell}");
+    }
+
+    private bool CanBuildAt(Vector2 worldPosition, Vector2Int cell)
+    {
+        if (!IsInsideMap(worldPosition))
+        {
+            return false;
+        }
+
+        float distanceToBase = Vector2.Distance(basePosition, worldPosition);
+
+        if (distanceToBase > buildRadius)
+        {
+            return false;
+        }
+
+        if (occupiedCells.Contains(cell))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private Vector2 GetMouseWorldPosition()
+    {
+        Vector3 mousePosition = Input.mousePosition;
+        Vector3 worldPosition = mainCamera.ScreenToWorldPoint(mousePosition);
+        return new Vector2(worldPosition.x, worldPosition.y);
+    }
+
+    private bool IsInsideMap(Vector2 worldPosition)
+    {
+        float half = GetMapHalfSize();
+
+        return worldPosition.x >= -half &&
+               worldPosition.x <= half &&
+               worldPosition.y >= -half &&
+               worldPosition.y <= half;
+    }
+
+    private Vector2Int WorldToCell(Vector2 worldPosition)
+    {
+        float half = GetMapHalfSize();
+
+        int x = Mathf.FloorToInt((worldPosition.x + half) / cellSize);
+        int y = Mathf.FloorToInt((worldPosition.y + half) / cellSize);
+
+        x = Mathf.Clamp(x, 0, mapSize - 1);
+        y = Mathf.Clamp(y, 0, mapSize - 1);
+
+        return new Vector2Int(x, y);
+    }
+
+    private Vector2 CellToWorld(Vector2Int cell)
+    {
+        float half = GetMapHalfSize();
+
+        float x = -half + cell.x * cellSize + cellSize / 2f;
+        float y = -half + cell.y * cellSize + cellSize / 2f;
+
+        return new Vector2(x, y);
+    }
+
+    private float GetMapHalfSize()
+    {
+        return mapSize * cellSize / 2f;
+    }
+
+    private GameObject CreateCircleObject(
+        string objectName,
+        Vector2 position,
+        float radius,
+        Color color,
+        int sortingOrder,
+        Transform parent
+    )
+    {
+        GameObject circleObject = new GameObject(objectName);
+        circleObject.transform.SetParent(parent);
+        circleObject.transform.position = new Vector3(position.x, position.y, 0f);
+        circleObject.transform.localScale = Vector3.one * radius * 2f;
+
+        SpriteRenderer spriteRenderer = circleObject.AddComponent<SpriteRenderer>();
+        spriteRenderer.sprite = circleSprite;
+        spriteRenderer.color = color;
+        spriteRenderer.sortingOrder = sortingOrder;
+
+        return circleObject;
+    }
+
+    private void CreateWorldLabel(Transform parent, string text, Color color)
+    {
+        GameObject labelObject = new GameObject("Label");
+        labelObject.transform.SetParent(parent);
+        labelObject.transform.localPosition = new Vector3(0f, 0f, -0.1f);
+        labelObject.transform.localScale = Vector3.one * 0.08f;
+
+        TextMesh textMesh = labelObject.AddComponent<TextMesh>();
+        textMesh.text = text;
+        textMesh.anchor = TextAnchor.MiddleCenter;
+        textMesh.alignment = TextAlignment.Center;
+        textMesh.fontSize = 48;
+        textMesh.color = color;
+
+        MeshRenderer meshRenderer = labelObject.GetComponent<MeshRenderer>();
+        meshRenderer.sortingOrder = 40;
+    }
+
+    private void SetPlacementPreviewVisible(bool visible)
+    {
+        if (placementPreviewObject != null && placementPreviewObject.activeSelf != visible)
+        {
+            placementPreviewObject.SetActive(visible);
+        }
+    }
+
+    private void SetPlacementPreviewColor(bool canBuild)
+    {
+        SpriteRenderer spriteRenderer = placementPreviewObject.GetComponent<SpriteRenderer>();
+
+        spriteRenderer.color = canBuild
+            ? new Color(0.2f, 1f, 0.35f, 0.45f)
+            : new Color(1f, 0.2f, 0.2f, 0.45f);
+    }
+
+    private Sprite CreateCircleSprite(int size)
+    {
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.filterMode = FilterMode.Bilinear;
+
+        Vector2 center = new Vector2(size / 2f, size / 2f);
+        float radius = size / 2f - 1f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float distance = Vector2.Distance(new Vector2(x, y), center);
+                float alpha = distance <= radius ? 1f : 0f;
+
+                texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        }
+
+        texture.Apply();
+
+        return Sprite.Create(
+            texture,
+            new Rect(0, 0, size, size),
+            new Vector2(0.5f, 0.5f),
+            size
+        );
+    }
+
+    private Texture2D CreateMenuBackgroundTexture()
+    {
+        Texture2D texture = new Texture2D(2, 2);
+
+        texture.SetPixel(0, 0, new Color(0.03f, 0.04f, 0.06f));
+        texture.SetPixel(1, 0, new Color(0.05f, 0.08f, 0.12f));
+        texture.SetPixel(0, 1, new Color(0.08f, 0.12f, 0.18f));
+        texture.SetPixel(1, 1, new Color(0.04f, 0.05f, 0.07f));
+
+        texture.Apply();
+
+        return texture;
     }
 }
