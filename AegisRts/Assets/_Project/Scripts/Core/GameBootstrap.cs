@@ -15,6 +15,11 @@ public class GameBootstrap : MonoBehaviour
         Factory
     }
 
+    private enum UnitType
+    {
+        Infantry
+    }
+
     [Header("Map Settings")]
     [SerializeField] private int mapSize = 32;
     [SerializeField] private float cellSize = 1f;
@@ -29,6 +34,10 @@ public class GameBootstrap : MonoBehaviour
     [Header("Resource Settings")]
     [SerializeField] private int startingResources = 500;
     [SerializeField] private int factoryCost = 150;
+    [SerializeField] private int infantryCost = 50;
+
+    [Header("Unit Settings")]
+    [SerializeField] private float infantryRadius = 0.42f;
 
     private int playerResources;
 
@@ -62,6 +71,33 @@ public class GameBootstrap : MonoBehaviour
         }
     }
 
+    private class UnitData
+    {
+        public string DisplayName;
+        public UnitType Type;
+        public GameObject GameObject;
+        public Vector2 Position;
+        public Vector2Int Cell;
+        public float Radius;
+
+        public UnitData(
+            string displayName,
+            UnitType type,
+            GameObject gameObject,
+            Vector2 position,
+            Vector2Int cell,
+            float radius
+        )
+        {
+            DisplayName = displayName;
+            Type = type;
+            GameObject = gameObject;
+            Position = position;
+            Cell = cell;
+            Radius = radius;
+        }
+    }
+
     private GameState gameState = GameState.MainMenu;
     private BuildingType selectedBuilding = BuildingType.None;
 
@@ -89,6 +125,8 @@ public class GameBootstrap : MonoBehaviour
 
     private readonly List<BuildingData> buildings = new List<BuildingData>();
     private BuildingData selectedBuildingData = null;
+
+    private readonly List<UnitData> units = new List<UnitData>();
 
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
 
@@ -168,7 +206,7 @@ public class GameBootstrap : MonoBehaviour
     private void DrawGameUI()
     {
         float panelWidth = 220f;
-        float panelHeight = 360f;
+        float panelHeight = 450f;
         float panelX = Screen.width - panelWidth - 20f;
         float panelY = 20f;
 
@@ -229,6 +267,26 @@ public class GameBootstrap : MonoBehaviour
                 "未选中建筑"
             );
         }
+
+        GUI.Box(new Rect(panelX + 15f, panelY + 340f, panelWidth - 30f, 80f), "生产单位");
+
+        if (selectedBuildingData != null && selectedBuildingData.Type == BuildingType.Factory)
+        {
+            if (GUI.Button(
+                    new Rect(panelX + 25f, panelY + 370f, panelWidth - 50f, 35f),
+                    $"生产步兵 ({infantryCost})"
+                ))
+            {
+                TryTrainInfantry(selectedBuildingData);
+            }
+        }
+        else
+        {
+            GUI.Label(
+                new Rect(panelX + 25f, panelY + 370f, panelWidth - 50f, 35f),
+                "请选择兵厂"
+            );
+        }
         
         GUI.Label(
             new Rect(20, 20, 650, 30),
@@ -236,9 +294,9 @@ public class GameBootstrap : MonoBehaviour
         );
 
         GUI.Label(
-            new Rect(20, 50, 500, 30),
-            $"资源：{playerResources}    兵厂成本：{factoryCost}"
-        );
+        new Rect(20, 50, 650, 30),
+        $"资源：{playerResources}    兵厂成本：{factoryCost}    步兵成本：{infantryCost}"
+);
     }
 
     private void StartGame()
@@ -459,6 +517,11 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        if (IsMouseOverRightPanel())
+        {
+            return;
+        }
+
         Vector2 mouseWorldPosition = GetMouseWorldPosition();
         BuildingData clickedBuilding = FindBuildingAt(mouseWorldPosition);
 
@@ -470,6 +533,23 @@ public class GameBootstrap : MonoBehaviour
         {
             ClearSelectedBuilding();
         }
+    }
+
+    private bool IsMouseOverRightPanel()
+    {
+        float panelWidth = 220f;
+        float panelHeight = 450f;
+        float panelX = Screen.width - panelWidth - 20f;
+        float panelY = 20f;
+
+        Vector2 mousePositionInGui = new Vector2(
+            Input.mousePosition.x,
+            Screen.height - Input.mousePosition.y
+        );
+
+        Rect rightPanelRect = new Rect(panelX, panelY, panelWidth, panelHeight);
+
+        return rightPanelRect.Contains(mousePositionInGui);
     }
 
     private BuildingData FindBuildingAt(Vector2 worldPosition)
@@ -616,6 +696,104 @@ public class GameBootstrap : MonoBehaviour
         occupiedCells.Add(cell);
 
         Debug.Log($"Factory built at cell {cell}. Remaining resources: {playerResources}");
+    }
+
+    private void TryTrainInfantry(BuildingData factory)
+    {
+        if (factory == null || factory.Type != BuildingType.Factory)
+        {
+            Debug.LogWarning("Cannot train Infantry: selected building is not a Factory.");
+            return;
+        }
+
+        if (playerResources < infantryCost)
+        {
+            Debug.LogWarning($"Cannot train Infantry: not enough resources. Need {infantryCost}, have {playerResources}.");
+            return;
+        }
+
+        if (!TryGetSpawnCellNear(factory.Cell, out Vector2Int spawnCell))
+        {
+            Debug.LogWarning("Cannot train Infantry: no valid spawn cell near Factory.");
+            return;
+        }
+
+        playerResources -= infantryCost;
+
+        Vector2 spawnPosition = CellToWorld(spawnCell);
+
+        GameObject infantryObject = CreateCircleObject(
+            "Infantry",
+            spawnPosition,
+            infantryRadius,
+            new Color(0.95f, 0.95f, 0.25f, 1f),
+            25,
+            buildingRoot
+        );
+
+        CreateWorldLabel(infantryObject.transform, "兵", Color.black);
+
+        UnitData infantry = new UnitData(
+            "步兵",
+            UnitType.Infantry,
+            infantryObject,
+            spawnPosition,
+            spawnCell,
+            infantryRadius
+        );
+
+        occupiedCells.Add(spawnCell);
+        units.Add(infantry);
+
+        Debug.Log($"Infantry trained at cell {spawnCell}. Remaining resources: {playerResources}");
+    }
+
+    private bool TryGetSpawnCellNear(Vector2Int originCell, out Vector2Int spawnCell)
+    {
+        Vector2Int[] offsets =
+        {
+            new Vector2Int(0, -1),
+            new Vector2Int(-1, 0),
+            new Vector2Int(1, 0),
+            new Vector2Int(0, 1),
+            new Vector2Int(-1, -1),
+            new Vector2Int(1, -1),
+            new Vector2Int(-1, 1),
+            new Vector2Int(1, 1),
+            new Vector2Int(0, -2),
+            new Vector2Int(-2, 0),
+            new Vector2Int(2, 0),
+            new Vector2Int(0, 2)
+        };
+
+        foreach (Vector2Int offset in offsets)
+        {
+            Vector2Int candidateCell = originCell + offset;
+
+            if (!IsCellInsideMap(candidateCell))
+            {
+                continue;
+            }
+
+            if (occupiedCells.Contains(candidateCell))
+            {
+                continue;
+            }
+
+            spawnCell = candidateCell;
+            return true;
+        }
+
+        spawnCell = originCell;
+        return false;
+    }
+
+    private bool IsCellInsideMap(Vector2Int cell)
+    {
+        return cell.x >= 0 &&
+            cell.x < mapSize &&
+            cell.y >= 0 &&
+            cell.y < mapSize;
     }
 
     private int GetBuildingCost(BuildingType buildingType)
