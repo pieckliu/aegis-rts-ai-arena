@@ -26,6 +26,36 @@ public class GameBootstrap : MonoBehaviour
     [Header("Building Settings")]
     [SerializeField] private float buildingRadius = 0.42f;
 
+    private class BuildingData
+    {
+        public string DisplayName;
+        public BuildingType Type;
+        public GameObject GameObject;
+        public Vector2 Position;
+        public Vector2Int Cell;
+        public float Radius;
+        public string Description;
+
+        public BuildingData(
+            string displayName,
+            BuildingType type,
+            GameObject gameObject,
+            Vector2 position,
+            Vector2Int cell,
+            float radius,
+            string description
+        )
+        {
+            DisplayName = displayName;
+            Type = type;
+            GameObject = gameObject;
+            Position = position;
+            Cell = cell;
+            Radius = radius;
+            Description = description;
+        }
+    }
+
     private GameState gameState = GameState.MainMenu;
     private BuildingType selectedBuilding = BuildingType.None;
 
@@ -41,6 +71,8 @@ public class GameBootstrap : MonoBehaviour
     private GameObject buildRangeObject;
     private GameObject placementPreviewObject;
 
+    private GameObject selectionRingObject;
+
     private Vector2 basePosition;
     private Vector2 currentPreviewPosition;
     private Vector2Int currentPreviewCell;
@@ -48,6 +80,9 @@ public class GameBootstrap : MonoBehaviour
     private bool isBuildMenuOpen = false;
     private bool hasPreviewCell = false;
     private bool gameWorldCreated = false;
+
+    private readonly List<BuildingData> buildings = new List<BuildingData>();
+    private BuildingData selectedBuildingData = null;
 
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
 
@@ -68,6 +103,7 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        HandleSelectionInput();
         HandlePlacementPreview();
         HandlePlacementConfirm();
     }
@@ -125,8 +161,8 @@ public class GameBootstrap : MonoBehaviour
 
     private void DrawGameUI()
     {
-        float panelWidth = 180f;
-        float panelHeight = 230f;
+        float panelWidth = 220f;
+        float panelHeight = 360f;
         float panelX = Screen.width - panelWidth - 20f;
         float panelY = 20f;
 
@@ -166,6 +202,28 @@ public class GameBootstrap : MonoBehaviour
             }
         }
 
+        GUI.Box(new Rect(panelX + 15f, panelY + 215f, panelWidth - 30f, 115f), "建筑信息");
+
+        if (selectedBuildingData != null)
+        {
+            GUI.Label(
+                new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
+                "选中：" + selectedBuildingData.DisplayName
+            );
+
+            GUI.Label(
+                new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
+                selectedBuildingData.Description
+            );
+        }
+        else
+        {
+            GUI.Label(
+                new Rect(panelX + 25f, panelY + 250f, panelWidth - 50f, 25f),
+                "未选中建筑"
+            );
+        }
+        
         GUI.Label(
             new Rect(20, 20, 650, 30),
             "操作提示：点击右侧“建筑菜单” → 选择“兵厂” → 移动鼠标预览 → 鼠标右键确认建造。"
@@ -194,6 +252,7 @@ public class GameBootstrap : MonoBehaviour
         CreateBase();
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
+        CreateSelectionRingObject();
     }
 
     private void SetupCamera()
@@ -276,6 +335,16 @@ public class GameBootstrap : MonoBehaviour
 
         CreateWorldLabel(baseObject.transform, "基地", Color.white);
 
+        buildings.Add(new BuildingData(
+            "基地",
+            BuildingType.None,
+            baseObject,
+            basePosition,
+            baseCell,
+            baseRadius,
+            "主基地：后续用于建造建筑和管理资源。"
+        ));
+
         Debug.Log($"Base created at cell {baseCell}");
     }
 
@@ -305,6 +374,20 @@ public class GameBootstrap : MonoBehaviour
         );
 
         placementPreviewObject.SetActive(false);
+    }
+
+    private void CreateSelectionRingObject()
+    {
+        selectionRingObject = CreateCircleObject(
+            "SelectionRing",
+            Vector2.zero,
+            0.7f,
+            new Color(1f, 0.85f, 0.1f, 0.28f),
+            15,
+            buildingRoot
+        );
+
+        selectionRingObject.SetActive(false);
     }
 
     private void SelectFactory()
@@ -341,6 +424,78 @@ public class GameBootstrap : MonoBehaviour
         }
 
         Debug.Log("Build mode cancelled.");
+    }
+
+    private void HandleSelectionInput()
+    {
+        if (selectedBuilding != BuildingType.None)
+        {
+            return;
+        }
+
+        if (!Input.GetMouseButtonDown(0))
+        {
+            return;
+        }
+
+        Vector2 mouseWorldPosition = GetMouseWorldPosition();
+        BuildingData clickedBuilding = FindBuildingAt(mouseWorldPosition);
+
+        if (clickedBuilding != null)
+        {
+            SelectBuilding(clickedBuilding);
+        }
+        else
+        {
+            ClearSelectedBuilding();
+        }
+    }
+
+    private BuildingData FindBuildingAt(Vector2 worldPosition)
+    {
+        for (int i = buildings.Count - 1; i >= 0; i--)
+        {
+            BuildingData building = buildings[i];
+            float distance = Vector2.Distance(worldPosition, building.Position);
+
+            if (distance <= building.Radius + 0.2f)
+            {
+                return building;
+            }
+        }
+
+        return null;
+    }
+
+    private void SelectBuilding(BuildingData building)
+    {
+        selectedBuildingData = building;
+
+        if (selectionRingObject != null)
+        {
+            selectionRingObject.SetActive(true);
+            selectionRingObject.transform.position = new Vector3(
+                building.Position.x,
+                building.Position.y,
+                -0.15f
+            );
+
+            selectionRingObject.transform.localScale = Vector3.one * building.Radius * 2.8f;
+        }
+
+        Debug.Log($"Selected building: {building.DisplayName}");
+    }
+
+    private void ClearSelectedBuilding()
+    {
+        selectedBuildingData = null;
+
+        if (selectionRingObject != null)
+        {
+            selectionRingObject.SetActive(false);
+        }
+
+        Debug.Log("Selected building cleared.");
     }
 
     private void HandlePlacementPreview()
@@ -417,6 +572,16 @@ public class GameBootstrap : MonoBehaviour
 
         CreateWorldLabel(factoryObject.transform, "兵厂", Color.black);
 
+        buildings.Add(new BuildingData(
+            "兵厂",
+            BuildingType.Factory,
+            factoryObject,
+            position,
+            cell,
+            buildingRadius,
+            "兵厂：后续用于生产步兵、载具等单位。"
+        ));
+        
         occupiedCells.Add(cell);
 
         Debug.Log($"Factory built at cell {cell}");
