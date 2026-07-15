@@ -20,6 +20,12 @@ public class GameBootstrap : MonoBehaviour
         Infantry
     }
 
+    private enum Team
+    {
+        Player,
+        Enemy
+    }
+
     [Header("Map Settings")]
     [SerializeField] private int mapSize = 32;
     [SerializeField] private float cellSize = 1f;
@@ -30,6 +36,16 @@ public class GameBootstrap : MonoBehaviour
 
     [Header("Building Settings")]
     [SerializeField] private float buildingRadius = 0.42f;
+
+    [Header("Health Settings")]
+    [SerializeField] private int playerBaseHitPoints = 500;
+    [SerializeField] private int factoryHitPoints = 300;
+    [SerializeField] private int enemyBaseHitPoints = 400;
+
+    [Header("Combat Settings")]
+    [SerializeField] private int infantryAttackDamage = 20;
+    [SerializeField] private float infantryAttackRange = 1.2f;
+    [SerializeField] private float infantryAttackCooldown = 1f;
 
     [Header("Resource Settings")]
     [SerializeField] private int startingResources = 500;
@@ -51,6 +67,9 @@ public class GameBootstrap : MonoBehaviour
         public Vector2Int Cell;
         public float Radius;
         public string Description;
+        public Team Team;
+        public int MaxHitPoints;
+        public int HitPoints;
 
         public BuildingData(
             string displayName,
@@ -59,7 +78,9 @@ public class GameBootstrap : MonoBehaviour
             Vector2 position,
             Vector2Int cell,
             float radius,
-            string description
+            string description,
+            Team team,
+            int maxHitPoints
         )
         {
             DisplayName = displayName;
@@ -69,6 +90,9 @@ public class GameBootstrap : MonoBehaviour
             Cell = cell;
             Radius = radius;
             Description = description;
+            Team = team;
+            MaxHitPoints = maxHitPoints;
+            HitPoints = maxHitPoints;
         }
     }
 
@@ -81,10 +105,17 @@ public class GameBootstrap : MonoBehaviour
         public Vector2Int Cell;
         public float Radius;
         public string Description;
+        public Team Team;
 
         public bool IsMoving;
         public Vector2 TargetPosition;
         public Vector2Int TargetCell;
+
+        public int AttackDamage;
+        public float AttackRange;
+        public float AttackCooldown;
+        public float AttackTimer;
+        public BuildingData AttackTarget;
 
         public UnitData(
             string displayName,
@@ -93,7 +124,11 @@ public class GameBootstrap : MonoBehaviour
             Vector2 position,
             Vector2Int cell,
             float radius,
-            string description
+            string description,
+            Team team,
+            int attackDamage,
+            float attackRange,
+            float attackCooldown
         )
         {
             DisplayName = displayName;
@@ -103,10 +138,17 @@ public class GameBootstrap : MonoBehaviour
             Cell = cell;
             Radius = radius;
             Description = description;
+            Team = team;
 
             IsMoving = false;
             TargetPosition = position;
             TargetCell = cell;
+
+            AttackDamage = attackDamage;
+            AttackRange = attackRange;
+            AttackCooldown = attackCooldown;
+            AttackTimer = 0f;
+            AttackTarget = null;
         }
     }
 
@@ -134,6 +176,8 @@ public class GameBootstrap : MonoBehaviour
     private bool isBuildMenuOpen = false;
     private bool hasPreviewCell = false;
     private bool gameWorldCreated = false;
+
+    private bool gameWon = false;
 
     private readonly List<BuildingData> buildings = new List<BuildingData>();
     private BuildingData selectedBuildingData = null;
@@ -164,6 +208,7 @@ public class GameBootstrap : MonoBehaviour
         HandleUnitMoveCommand();
         HandlePlacementPreview();
         HandlePlacementConfirm();
+        UpdateUnitCombat();
         UpdateUnitMovement();
     }
 
@@ -274,6 +319,11 @@ public class GameBootstrap : MonoBehaviour
                 new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
                 selectedBuildingData.Description
             );
+
+            GUI.Label(
+                new Rect(panelX + 25f, panelY + 315f, panelWidth - 50f, 25f),
+                $"生命值：{selectedBuildingData.HitPoints}/{selectedBuildingData.MaxHitPoints}"
+            );
         }
         else if (selectedUnitData != null)
         {
@@ -323,7 +373,23 @@ public class GameBootstrap : MonoBehaviour
         GUI.Label(
         new Rect(20, 50, 650, 30),
         $"资源：{playerResources}    兵厂成本：{factoryCost}    步兵成本：{infantryCost}"
-);
+        );
+
+        if (gameWon)
+        {
+            GUIStyle victoryStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 38,
+                alignment = TextAnchor.MiddleCenter
+            };
+            victoryStyle.normal.textColor = Color.yellow;
+
+            GUI.Label(
+                new Rect(0, Screen.height * 0.38f, Screen.width, 80),
+                "胜利：AI 基地已被摧毁",
+                victoryStyle
+            );
+        }
     }
 
     private void StartGame()
@@ -348,6 +414,7 @@ public class GameBootstrap : MonoBehaviour
 
         CreateGrid();
         CreateBase();
+        CreateEnemyBase();
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
@@ -442,10 +509,50 @@ public class GameBootstrap : MonoBehaviour
             basePosition,
             baseCell,
             baseRadius,
-            "主基地：后续用于建造建筑和管理资源。"
+            "主基地：后续用于建造建筑和管理资源。",
+            Team.Player,
+            playerBaseHitPoints
         ));
 
         Debug.Log($"Base created at cell {baseCell}");
+    }
+
+    private void CreateEnemyBase()
+    {
+        float half = GetMapHalfSize();
+
+        Vector2 enemyBasePosition = new Vector2(
+            -half + cellSize * 2.5f,
+            -half + cellSize * 2.5f
+        );
+
+        Vector2Int enemyBaseCell = WorldToCell(enemyBasePosition);
+        occupiedCells.Add(enemyBaseCell);
+
+        GameObject enemyBaseObject = CreateCircleObject(
+            "EnemyBase",
+            enemyBasePosition,
+            baseRadius,
+            new Color(1f, 0.25f, 0.25f, 1f),
+            20,
+            buildingRoot
+        );
+
+        CreateWorldLabel(enemyBaseObject.transform, "AI", Color.white);
+
+        buildings.Add(new BuildingData(
+            "AI基地",
+            BuildingType.None,
+            enemyBaseObject,
+            enemyBasePosition,
+            enemyBaseCell,
+            baseRadius,
+            "敌方 AI 基地：摧毁它即可获得胜利。",
+            Team.Enemy,
+            enemyBaseHitPoints
+        ));
+
+        Debug.Log($"Enemy base created at cell {enemyBaseCell}");
     }
 
     private void CreateBuildRangeObject()
@@ -703,11 +810,37 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        BuildingData targetBuilding = FindBuildingAt(mouseWorldPosition);
+
+        if (targetBuilding != null && targetBuilding.Team == Team.Enemy)
+        {
+            TryAttackSelectedUnit(targetBuilding);
+            return;
+        }
+
         Vector2Int targetCell = WorldToCell(mouseWorldPosition);
 
         TryMoveSelectedUnitToCell(targetCell);
     }
 
+    private void TryAttackSelectedUnit(BuildingData targetBuilding)
+    {
+        if (selectedUnitData == null)
+        {
+            return;
+        }
+
+        if (targetBuilding == null || targetBuilding.Team != Team.Enemy)
+        {
+            Debug.LogWarning("Cannot attack: invalid target.");
+            return;
+        }
+
+        selectedUnitData.AttackTarget = targetBuilding;
+        selectedUnitData.IsMoving = false;
+
+        Debug.Log($"Attack command: {selectedUnitData.DisplayName} -> {targetBuilding.DisplayName}");
+    }
     private void TryMoveSelectedUnitToCell(Vector2Int targetCell)
     {
         if (selectedUnitData == null)
@@ -733,6 +866,7 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        selectedUnitData.AttackTarget = null;
         occupiedCells.Remove(selectedUnitData.Cell);
         occupiedCells.Add(targetCell);
 
@@ -744,10 +878,110 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Move command: {selectedUnitData.DisplayName} -> cell {targetCell}");
     }
 
+    private void UpdateUnitCombat()
+    {
+        foreach (UnitData unit in units)
+        {
+            if (unit.AttackTarget == null)
+            {
+                continue;
+            }
+
+            BuildingData target = unit.AttackTarget;
+
+            if (!buildings.Contains(target))
+            {
+                unit.AttackTarget = null;
+                continue;
+            }
+
+            float distance = Vector2.Distance(unit.Position, target.Position);
+
+            if (distance > unit.AttackRange)
+            {
+                Vector2 nextPosition = Vector2.MoveTowards(
+                    unit.Position,
+                    target.Position,
+                    unitMoveSpeed * Time.deltaTime
+                );
+
+                unit.GameObject.transform.position = new Vector3(
+                    nextPosition.x,
+                    nextPosition.y,
+                    0f
+                );
+
+                unit.Position = nextPosition;
+
+                if (selectedUnitData == unit && selectionRingObject != null)
+                {
+                    selectionRingObject.transform.position = new Vector3(
+                        unit.Position.x,
+                        unit.Position.y,
+                        -0.15f
+                    );
+                }
+
+                return;
+            }
+
+            unit.AttackTimer -= Time.deltaTime;
+
+            if (unit.AttackTimer > 0f)
+            {
+                continue;
+            }
+
+            unit.AttackTimer = unit.AttackCooldown;
+            target.HitPoints -= unit.AttackDamage;
+
+            Debug.Log($"{unit.DisplayName} attacked {target.DisplayName}. HP: {target.HitPoints}/{target.MaxHitPoints}");
+
+            if (target.HitPoints <= 0)
+            {
+                DestroyBuilding(target);
+                unit.AttackTarget = null;
+            }
+        }
+    }
+
+    private void DestroyBuilding(BuildingData building)
+    {
+        if (building == null)
+        {
+            return;
+        }
+
+        Debug.Log($"{building.DisplayName} destroyed.");
+
+        buildings.Remove(building);
+        occupiedCells.Remove(building.Cell);
+
+        if (selectedBuildingData == building)
+        {
+            selectedBuildingData = null;
+        }
+
+        if (building.GameObject != null)
+        {
+            Destroy(building.GameObject);
+        }
+
+        if (building.Team == Team.Enemy && building.DisplayName == "AI基地")
+        {
+            gameWon = true;
+            Debug.Log("Victory! Enemy AI base destroyed.");
+        }
+    }
     private void UpdateUnitMovement()
     {
         foreach (UnitData unit in units)
         {
+            if (unit.AttackTarget != null)
+            {
+                continue;
+            }
+
             if (!unit.IsMoving)
             {
                 continue;
@@ -884,7 +1118,9 @@ public class GameBootstrap : MonoBehaviour
             position,
             cell,
             buildingRadius,
-            "兵厂：后续用于生产步兵、载具等单位。"
+            "兵厂：后续用于生产步兵、载具等单位。",
+            Team.Player,
+            factoryHitPoints
         ));
         
         occupiedCells.Add(cell);
@@ -934,7 +1170,11 @@ public class GameBootstrap : MonoBehaviour
             spawnPosition,
             spawnCell,
             infantryRadius,
-            "步兵：基础作战单位。当前版本支持左键选中、右键移动。"
+            "步兵：基础作战单位。当前版本支持左键选中、右键移动和攻击敌方建筑。",
+            Team.Player,
+            infantryAttackDamage,
+            infantryAttackRange,
+            infantryAttackCooldown
         );
 
         occupiedCells.Add(spawnCell);
