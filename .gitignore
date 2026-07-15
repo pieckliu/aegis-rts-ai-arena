@@ -34,3 +34,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+**/[Rr]ecovery/
+**/[Rr]ecovery.meta
+**/_Recovery/
+**/_Recovery.meta
