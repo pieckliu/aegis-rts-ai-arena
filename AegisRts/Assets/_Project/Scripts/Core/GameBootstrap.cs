@@ -47,6 +47,12 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float infantryAttackRange = 1.2f;
     [SerializeField] private float infantryAttackCooldown = 1f;
 
+    [Header("Enemy AI Settings")]
+    [SerializeField] private float enemySpawnInterval = 8f;
+    [SerializeField] private int enemyInfantryAttackDamage = 10;
+    [SerializeField] private float enemyInfantryAttackRange = 1.2f;
+    [SerializeField] private float enemyInfantryAttackCooldown = 1.2f;
+
     [Header("Resource Settings")]
     [SerializeField] private int startingResources = 500;
     [SerializeField] private int factoryCost = 150;
@@ -179,6 +185,12 @@ public class GameBootstrap : MonoBehaviour
 
     private bool gameWon = false;
 
+    private bool gameLost = false;
+    private float enemySpawnTimer = 0f;
+
+    private BuildingData playerBaseData = null;
+    private BuildingData enemyBaseData = null;
+
     private readonly List<BuildingData> buildings = new List<BuildingData>();
     private BuildingData selectedBuildingData = null;
 
@@ -204,10 +216,16 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        if (gameWon || gameLost)
+        {
+            return;
+        }
+
         HandleSelectionInput();
         HandleUnitMoveCommand();
         HandlePlacementPreview();
         HandlePlacementConfirm();
+        UpdateEnemyAI();
         UpdateUnitCombat();
         UpdateUnitMovement();
     }
@@ -390,6 +408,22 @@ public class GameBootstrap : MonoBehaviour
                 victoryStyle
             );
         }
+
+        if (gameLost)
+        {
+            GUIStyle defeatStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 38,
+                alignment = TextAnchor.MiddleCenter
+            };
+            defeatStyle.normal.textColor = Color.red;
+
+            GUI.Label(
+                new Rect(0, Screen.height * 0.48f, Screen.width, 80),
+                "失败：玩家基地已被摧毁",
+                defeatStyle
+            );
+        }
     }
 
     private void StartGame()
@@ -418,6 +452,8 @@ public class GameBootstrap : MonoBehaviour
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
+
+        enemySpawnTimer = enemySpawnInterval;
 
         Debug.Log($"Starting resources: {playerResources}");
     }
@@ -502,7 +538,7 @@ public class GameBootstrap : MonoBehaviour
 
         CreateWorldLabel(baseObject.transform, "基地", Color.white);
 
-        buildings.Add(new BuildingData(
+        playerBaseData = new BuildingData(
             "基地",
             BuildingType.None,
             baseObject,
@@ -512,7 +548,9 @@ public class GameBootstrap : MonoBehaviour
             "主基地：后续用于建造建筑和管理资源。",
             Team.Player,
             playerBaseHitPoints
-        ));
+        );
+
+        buildings.Add(playerBaseData);
 
         Debug.Log($"Base created at cell {baseCell}");
     }
@@ -540,7 +578,7 @@ public class GameBootstrap : MonoBehaviour
 
         CreateWorldLabel(enemyBaseObject.transform, "AI", Color.white);
 
-        buildings.Add(new BuildingData(
+        enemyBaseData = new BuildingData(
             "AI基地",
             BuildingType.None,
             enemyBaseObject,
@@ -550,7 +588,9 @@ public class GameBootstrap : MonoBehaviour
             "敌方 AI 基地：摧毁它即可获得胜利。",
             Team.Enemy,
             enemyBaseHitPoints
-        ));
+        );
+
+buildings.Add(enemyBaseData);
 
         Debug.Log($"Enemy base created at cell {enemyBaseCell}");
     }
@@ -878,6 +918,78 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Move command: {selectedUnitData.DisplayName} -> cell {targetCell}");
     }
 
+    private void UpdateEnemyAI()
+    {
+        if (enemyBaseData == null || !buildings.Contains(enemyBaseData))
+        {
+            return;
+        }
+
+        if (playerBaseData == null || !buildings.Contains(playerBaseData))
+        {
+            return;
+        }
+
+        enemySpawnTimer -= Time.deltaTime;
+
+        if (enemySpawnTimer > 0f)
+        {
+            return;
+        }
+
+        enemySpawnTimer = enemySpawnInterval;
+
+        SpawnEnemyInfantry();
+    }
+
+    private void SpawnEnemyInfantry()
+    {
+        if (enemyBaseData == null)
+        {
+            return;
+        }
+
+        if (!TryGetSpawnCellNear(enemyBaseData.Cell, out Vector2Int spawnCell))
+        {
+            Debug.LogWarning("Enemy AI cannot spawn infantry: no valid spawn cell.");
+            return;
+        }
+
+        Vector2 spawnPosition = CellToWorld(spawnCell);
+
+        GameObject enemyInfantryObject = CreateCircleObject(
+            "EnemyInfantry",
+            spawnPosition,
+            infantryRadius,
+            new Color(1f, 0.45f, 0.15f, 1f),
+            25,
+            buildingRoot
+        );
+
+        CreateWorldLabel(enemyInfantryObject.transform, "敌", Color.black);
+
+        UnitData enemyInfantry = new UnitData(
+            "敌方步兵",
+            UnitType.Infantry,
+            enemyInfantryObject,
+            spawnPosition,
+            spawnCell,
+            infantryRadius,
+            "敌方步兵：由 AI 基地自动生产，会攻击玩家基地。",
+            Team.Enemy,
+            enemyInfantryAttackDamage,
+            enemyInfantryAttackRange,
+            enemyInfantryAttackCooldown
+        );
+
+        enemyInfantry.AttackTarget = playerBaseData;
+
+        occupiedCells.Add(spawnCell);
+        units.Add(enemyInfantry);
+
+        Debug.Log($"Enemy infantry spawned at cell {spawnCell} and is attacking player base.");
+    }
+    
     private void UpdateUnitCombat()
     {
         foreach (UnitData unit in units)
@@ -922,7 +1034,7 @@ public class GameBootstrap : MonoBehaviour
                     );
                 }
 
-                return;
+                continue;
             }
 
             unit.AttackTimer -= Time.deltaTime;
@@ -971,6 +1083,12 @@ public class GameBootstrap : MonoBehaviour
         {
             gameWon = true;
             Debug.Log("Victory! Enemy AI base destroyed.");
+        }
+
+        if (building.Team == Team.Player && building.DisplayName == "基地")
+        {
+            gameLost = true;
+            Debug.Log("Defeat! Player base destroyed.");
         }
     }
     private void UpdateUnitMovement()
