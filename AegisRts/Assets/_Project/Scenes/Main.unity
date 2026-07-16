@@ -386,6 +386,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fb2c36fd720d1f44bac16e3da02cfd75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameBootstrap
+  mapSize: 32
+  cellSize: 1
+  baseRadius: 0.45
+  buildRadius: 7
+  buildingRadius: 0.42
+  playerBaseHitPoints: 500
+  factoryHitPoints: 300
+  enemyBaseHitPoints: 400
+  infantryAttackDamage: 20
+  infantryAttackRange: 1.2
+  infantryAttackCooldown: 1
+  enemySpawnInterval: 15
+  enemyInfantryAttackDamage: 10
+  enemyInfantryAttackRange: 1.2
+  enemyInfantryAttackCooldown: 1.2
+  startingResources: 500
+  factoryCost: 150
+  infantryCost: 50
+  infantryRadius: 0.42
+  unitMoveSpeed: 5
 --- !u!4 &1262655568
 Transform:
   m_ObjectHideFlags: 0

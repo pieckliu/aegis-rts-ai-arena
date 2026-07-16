@@ -48,7 +48,7 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float infantryAttackCooldown = 1f;
 
     [Header("Enemy AI Settings")]
-    [SerializeField] private float enemySpawnInterval = 8f;
+    [SerializeField] private float enemySpawnInterval = 15f;
     [SerializeField] private int enemyInfantryAttackDamage = 10;
     [SerializeField] private float enemyInfantryAttackRange = 1.2f;
     [SerializeField] private float enemyInfantryAttackCooldown = 1.2f;
@@ -61,6 +61,8 @@ public class GameBootstrap : MonoBehaviour
     [Header("Unit Settings")]
     [SerializeField] private float infantryRadius = 0.42f;
     [SerializeField] private float unitMoveSpeed = 5f;
+
+    [SerializeField] private float dragSelectThreshold = 10f;
 
     private int playerResources;
 
@@ -197,6 +199,13 @@ public class GameBootstrap : MonoBehaviour
     private readonly List<UnitData> units = new List<UnitData>();
     private UnitData selectedUnitData = null;
 
+    private readonly List<UnitData> selectedUnits = new List<UnitData>();
+    private readonly Dictionary<UnitData, GameObject> unitSelectionRings = new Dictionary<UnitData, GameObject>();
+
+    private bool isDraggingSelection = false;
+    private Vector2 dragStartScreenPosition;
+    private Vector2 dragCurrentScreenPosition;
+
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
 
     private void Awake()
@@ -228,6 +237,7 @@ public class GameBootstrap : MonoBehaviour
         UpdateEnemyAI();
         UpdateUnitCombat();
         UpdateUnitMovement();
+        UpdateSelectionRingPositions();
     }
 
     private void OnGUI()
@@ -343,17 +353,32 @@ public class GameBootstrap : MonoBehaviour
                 $"生命值：{selectedBuildingData.HitPoints}/{selectedBuildingData.MaxHitPoints}"
             );
         }
-        else if (selectedUnitData != null)
+        else if (selectedUnits.Count > 0)
         {
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
-                "选中单位：" + selectedUnitData.DisplayName
-            );
+            if (selectedUnits.Count == 1)
+            {
+                GUI.Label(
+                    new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
+                    "选中单位：" + selectedUnits[0].DisplayName
+                );
 
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
-                selectedUnitData.Description
-            );
+                GUI.Label(
+                    new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
+                    selectedUnits[0].Description
+                );
+            }
+            else
+            {
+                GUI.Label(
+                    new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
+                    $"已选中单位：{selectedUnits.Count}"
+                );
+
+                GUI.Label(
+                    new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
+                    "右键点击地图可群体移动；右键点击 AI 基地可群体攻击。"
+                );
+            }
         }
         else
         {
@@ -424,6 +449,64 @@ public class GameBootstrap : MonoBehaviour
                 defeatStyle
             );
         }
+        DrawSelectionRectangle();
+    }
+
+    private void DrawSelectionRectangle()
+    {
+        if (!isDraggingSelection)
+        {
+            return;
+        }
+
+        float dragDistance = Vector2.Distance(dragStartScreenPosition, dragCurrentScreenPosition);
+
+        if (dragDistance < dragSelectThreshold)
+        {
+            return;
+        }
+
+        Rect guiRect = GetGuiRect(dragStartScreenPosition, dragCurrentScreenPosition);
+
+        Color previousColor = GUI.color;
+
+        GUI.color = new Color(0.2f, 0.8f, 1f, 0.18f);
+        GUI.DrawTexture(guiRect, Texture2D.whiteTexture);
+
+        GUI.color = new Color(0.2f, 0.8f, 1f, 0.85f);
+        DrawRectBorder(guiRect, 2f);
+
+        GUI.color = previousColor;
+    }
+
+    private void DrawRectBorder(Rect rect, float thickness)
+    {
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, rect.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMax - thickness, rect.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMax - thickness, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
+    }
+
+    private Rect GetScreenRect(Vector2 screenStart, Vector2 screenEnd)
+    {
+        float xMin = Mathf.Min(screenStart.x, screenEnd.x);
+        float xMax = Mathf.Max(screenStart.x, screenEnd.x);
+        float yMin = Mathf.Min(screenStart.y, screenEnd.y);
+        float yMax = Mathf.Max(screenStart.y, screenEnd.y);
+
+        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+    }
+
+    private Rect GetGuiRect(Vector2 screenStart, Vector2 screenEnd)
+    {
+        Rect screenRect = GetScreenRect(screenStart, screenEnd);
+
+        return new Rect(
+            screenRect.xMin,
+            Screen.height - screenRect.yMax,
+            screenRect.width,
+            screenRect.height
+        );
     }
 
     private void StartGame()
@@ -686,23 +769,55 @@ buildings.Add(enemyBaseData);
             return;
         }
 
-        if (!Input.GetMouseButtonDown(0))
+        if (Input.GetMouseButtonDown(0))
         {
-            return;
+            if (IsMouseOverRightPanel())
+            {
+                return;
+            }
+
+            isDraggingSelection = true;
+            dragStartScreenPosition = Input.mousePosition;
+            dragCurrentScreenPosition = dragStartScreenPosition;
         }
 
-        if (IsMouseOverRightPanel())
+        if (isDraggingSelection && Input.GetMouseButton(0))
         {
-            return;
+            dragCurrentScreenPosition = Input.mousePosition;
         }
 
+        if (isDraggingSelection && Input.GetMouseButtonUp(0))
+        {
+            isDraggingSelection = false;
+            dragCurrentScreenPosition = Input.mousePosition;
+
+            if (IsMouseOverRightPanel())
+            {
+                return;
+            }
+
+            float dragDistance = Vector2.Distance(dragStartScreenPosition, dragCurrentScreenPosition);
+
+            if (dragDistance >= dragSelectThreshold)
+            {
+                SelectUnitsInDragRect();
+            }
+            else
+            {
+                HandleSingleClickSelection();
+            }
+        }
+    }
+
+    private void HandleSingleClickSelection()
+    {
         Vector2 mouseWorldPosition = GetMouseWorldPosition();
 
         UnitData clickedUnit = FindUnitAt(mouseWorldPosition);
 
-        if (clickedUnit != null)
+        if (clickedUnit != null && clickedUnit.Team == Team.Player)
         {
-            SelectUnit(clickedUnit);
+            SelectSingleUnit(clickedUnit);
             return;
         }
 
@@ -711,6 +826,37 @@ buildings.Add(enemyBaseData);
         if (clickedBuilding != null)
         {
             SelectBuilding(clickedBuilding);
+        }
+        else
+        {
+            ClearSelectedBuilding();
+        }
+    }
+
+    private void SelectUnitsInDragRect()
+    {
+        Rect selectionRect = GetScreenRect(dragStartScreenPosition, dragCurrentScreenPosition);
+
+        List<UnitData> unitsInRect = new List<UnitData>();
+
+        foreach (UnitData unit in units)
+        {
+            if (unit.Team != Team.Player)
+            {
+                continue;
+            }
+
+            Vector3 unitScreenPosition = mainCamera.WorldToScreenPoint(unit.Position);
+
+            if (selectionRect.Contains(unitScreenPosition))
+            {
+                unitsInRect.Add(unit);
+            }
+        }
+
+        if (unitsInRect.Count > 0)
+        {
+            SelectMultipleUnits(unitsInRect);
         }
         else
         {
@@ -771,6 +917,8 @@ buildings.Add(enemyBaseData);
     {
         selectedBuildingData = building;
         selectedUnitData = null;
+        selectedUnits.Clear();
+        ClearUnitSelectionRings();
 
         if (selectionRingObject != null)
         {
@@ -787,30 +935,114 @@ buildings.Add(enemyBaseData);
         Debug.Log($"Selected building: {building.DisplayName}");
     }
 
-    private void SelectUnit(UnitData unit)
+    private void SelectSingleUnit(UnitData unit)
     {
-        selectedUnitData = unit;
+        List<UnitData> singleUnitList = new List<UnitData>
+        {
+            unit
+        };
+
+        SelectMultipleUnits(singleUnitList);
+    }
+
+    private void SelectMultipleUnits(List<UnitData> unitsToSelect)
+    {
         selectedBuildingData = null;
+        selectedUnitData = null;
 
         if (selectionRingObject != null)
         {
-            selectionRingObject.SetActive(true);
-            selectionRingObject.transform.position = new Vector3(
+            selectionRingObject.SetActive(false);
+        }
+
+        selectedUnits.Clear();
+        ClearUnitSelectionRings();
+
+        foreach (UnitData unit in unitsToSelect)
+        {
+            if (unit == null || unit.Team != Team.Player)
+            {
+                continue;
+            }
+
+            selectedUnits.Add(unit);
+            CreateUnitSelectionRing(unit);
+        }
+
+        if (selectedUnits.Count == 1)
+        {
+            selectedUnitData = selectedUnits[0];
+            Debug.Log($"Selected unit: {selectedUnitData.DisplayName}");
+        }
+        else
+        {
+            Debug.Log($"Selected {selectedUnits.Count} units.");
+        }
+    }
+
+    private void CreateUnitSelectionRing(UnitData unit)
+    {
+        GameObject ringObject = CreateCircleObject(
+            "UnitSelectionRing",
+            unit.Position,
+            unit.Radius * 1.5f,
+            new Color(1f, 0.85f, 0.1f, 0.35f),
+            18,
+            buildingRoot
+        );
+
+        unitSelectionRings[unit] = ringObject;
+    }
+
+    private void ClearUnitSelectionRings()
+    {
+        foreach (GameObject ringObject in unitSelectionRings.Values)
+        {
+            if (ringObject != null)
+            {
+                Destroy(ringObject);
+            }
+        }
+
+        unitSelectionRings.Clear();
+    }
+
+    private void UpdateSelectionRingPositions()
+    {
+        foreach (KeyValuePair<UnitData, GameObject> pair in unitSelectionRings)
+        {
+            UnitData unit = pair.Key;
+            GameObject ringObject = pair.Value;
+
+            if (unit == null || ringObject == null)
+            {
+                continue;
+            }
+
+            ringObject.transform.position = new Vector3(
                 unit.Position.x,
                 unit.Position.y,
                 -0.15f
             );
-
-            selectionRingObject.transform.localScale = Vector3.one * unit.Radius * 3.0f;
         }
 
-        Debug.Log($"Selected unit: {unit.DisplayName}");
+        if (selectedBuildingData != null && selectionRingObject != null)
+        {
+            selectionRingObject.transform.position = new Vector3(
+                selectedBuildingData.Position.x,
+                selectedBuildingData.Position.y,
+                -0.15f
+            );
+        }
     }
 
     private void ClearSelectedBuilding()
     {
         selectedBuildingData = null;
         selectedUnitData = null;
+        selectedUnits.Clear();
+
+        ClearUnitSelectionRings();
 
         if (selectionRingObject != null)
         {
@@ -827,7 +1059,7 @@ buildings.Add(enemyBaseData);
             return;
         }
 
-        if (selectedUnitData == null)
+        if (selectedUnits.Count == 0)
         {
             return;
         }
@@ -846,7 +1078,7 @@ buildings.Add(enemyBaseData);
 
         if (!IsInsideMap(mouseWorldPosition))
         {
-            Debug.LogWarning("Cannot move unit: target is outside the map.");
+            Debug.LogWarning("Cannot command units: target is outside the map.");
             return;
         }
 
@@ -854,13 +1086,13 @@ buildings.Add(enemyBaseData);
 
         if (targetBuilding != null && targetBuilding.Team == Team.Enemy)
         {
-            TryAttackSelectedUnit(targetBuilding);
+            TryAttackSelectedUnits(targetBuilding);
             return;
         }
 
         Vector2Int targetCell = WorldToCell(mouseWorldPosition);
 
-        TryMoveSelectedUnitToCell(targetCell);
+        TryMoveSelectedUnitsToCell(targetCell);
     }
 
     private void TryAttackSelectedUnit(BuildingData targetBuilding)
@@ -880,6 +1112,143 @@ buildings.Add(enemyBaseData);
         selectedUnitData.IsMoving = false;
 
         Debug.Log($"Attack command: {selectedUnitData.DisplayName} -> {targetBuilding.DisplayName}");
+    }
+
+    private void TryAttackSelectedUnits(BuildingData targetBuilding)
+    {
+        if (targetBuilding == null || targetBuilding.Team != Team.Enemy)
+        {
+            Debug.LogWarning("Cannot attack: invalid target.");
+            return;
+        }
+
+        int commandCount = 0;
+
+        foreach (UnitData unit in selectedUnits)
+        {
+            if (unit == null || unit.Team != Team.Player)
+            {
+                continue;
+            }
+
+            unit.AttackTarget = targetBuilding;
+            unit.IsMoving = false;
+            commandCount++;
+        }
+
+        Debug.Log($"Attack command: {commandCount} units -> {targetBuilding.DisplayName}");
+    }
+
+    private void TryMoveSelectedUnitsToCell(Vector2Int centerCell)
+    {
+        List<UnitData> movableUnits = new List<UnitData>();
+        HashSet<Vector2Int> selectedCurrentCells = new HashSet<Vector2Int>();
+
+        foreach (UnitData unit in selectedUnits)
+        {
+            if (unit == null || unit.Team != Team.Player)
+            {
+                continue;
+            }
+
+            movableUnits.Add(unit);
+            selectedCurrentCells.Add(unit.Cell);
+        }
+
+        if (movableUnits.Count == 0)
+        {
+            return;
+        }
+
+        List<Vector2Int> targetCells = FindGroupTargetCells(
+            centerCell,
+            movableUnits.Count,
+            selectedCurrentCells
+        );
+
+        if (targetCells.Count == 0)
+        {
+            Debug.LogWarning("Cannot move units: no valid target cells.");
+            return;
+        }
+
+        foreach (UnitData unit in movableUnits)
+        {
+            occupiedCells.Remove(unit.Cell);
+        }
+
+        int moveCount = Mathf.Min(movableUnits.Count, targetCells.Count);
+
+        for (int i = 0; i < moveCount; i++)
+        {
+            UnitData unit = movableUnits[i];
+            Vector2Int targetCell = targetCells[i];
+
+            occupiedCells.Add(targetCell);
+
+            unit.AttackTarget = null;
+            unit.Cell = targetCell;
+            unit.TargetCell = targetCell;
+            unit.TargetPosition = CellToWorld(targetCell);
+            unit.IsMoving = true;
+        }
+
+        Debug.Log($"Move command: {moveCount} units -> around cell {centerCell}");
+    }
+
+    private List<Vector2Int> FindGroupTargetCells(
+        Vector2Int centerCell,
+        int requiredCount,
+        HashSet<Vector2Int> selectedCurrentCells
+    )
+    {
+        List<Vector2Int> result = new List<Vector2Int>();
+        HashSet<Vector2Int> reservedCells = new HashSet<Vector2Int>();
+
+        int maxSearchRadius = 6;
+
+        for (int radius = 0; radius <= maxSearchRadius; radius++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    Vector2Int candidateCell = new Vector2Int(
+                        centerCell.x + dx,
+                        centerCell.y + dy
+                    );
+
+                    if (!IsCellInsideMap(candidateCell))
+                    {
+                        continue;
+                    }
+
+                    if (reservedCells.Contains(candidateCell))
+                    {
+                        continue;
+                    }
+
+                    bool occupiedByNonSelectedUnitOrBuilding =
+                        occupiedCells.Contains(candidateCell) &&
+                        !selectedCurrentCells.Contains(candidateCell);
+
+                    if (occupiedByNonSelectedUnitOrBuilding)
+                    {
+                        continue;
+                    }
+
+                    result.Add(candidateCell);
+                    reservedCells.Add(candidateCell);
+
+                    if (result.Count >= requiredCount)
+                    {
+                        return result;
+                    }
+                }
+            }
+        }
+
+        return result;
     }
     private void TryMoveSelectedUnitToCell(Vector2Int targetCell)
     {
