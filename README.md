@@ -1,4 +1,4 @@
-\# Aegis RTS AI Arena
+# Aegis RTS AI Arena
 
 
 
@@ -10,21 +10,25 @@ The project explores a tactical RTS environment where human players can fight ag
 
 
 
-\## Project Structure
+## Project Structure
 
 
 
-\- `AegisRts/` - Unity game project
+- `AegisRts/` - Unity game project
 
-\- `python/` - future AI training and environment API
+- `docs/` - design notes and the in-process Arena API contract
 
-\- `docs/` - future design documents and technical notes
-
-
-
-\## Current Stage
+## Current Stage
 
 
 
-Early Unity prototype.
+Playable Unity vertical slice:
+
+- build a factory, spend and regenerate resources, and train infantry;
+- select, box-select, move, and command groups to attack;
+- fight an automatically spawning enemy army;
+- win, lose, pause, restart, and return to the menu;
+- query structured match observations and submit agent actions through the Arena API.
+
+See [`docs/arena-api.md`](docs/arena-api.md) for the agent-facing contract.
 
