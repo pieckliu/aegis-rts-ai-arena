@@ -23,6 +23,8 @@ public sealed class ArenaEntityObservation
     public int CellY;
     public int HitPoints;
     public int MaxHitPoints;
+    public int QueueCount;
+    public float ProductionProgress;
 }
 
 [Serializable]

@@ -25,4 +25,16 @@ public sealed class ArenaGameRulesTests
     {
         Assert.AreEqual(100, ArenaGameRules.ApplyIncome(100, -10));
     }
+
+    [Test]
+    public void CanQueue_RejectsFullQueue()
+    {
+        Assert.IsFalse(ArenaGameRules.CanQueue(5, 5, 500, 50));
+    }
+
+    [Test]
+    public void CanQueue_AcceptsAvailableSlotAndResources()
+    {
+        Assert.IsTrue(ArenaGameRules.CanQueue(2, 5, 100, 50));
+    }
 }
