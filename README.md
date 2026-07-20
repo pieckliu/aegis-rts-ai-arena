@@ -25,7 +25,10 @@ The project explores a tactical RTS environment where human players can fight ag
 Playable Unity vertical slice:
 
 - build a factory, spend and regenerate resources, and train infantry;
+- queue production in factories and wait when an exit is blocked;
 - select, box-select, move, and command groups to attack;
+- navigate groups around occupied grid cells;
+- pan and zoom the bounded battlefield camera;
 - fight an automatically spawning enemy army;
 - win, lose, pause, restart, and return to the menu;
 - query structured match observations and submit agent actions through the Arena API.

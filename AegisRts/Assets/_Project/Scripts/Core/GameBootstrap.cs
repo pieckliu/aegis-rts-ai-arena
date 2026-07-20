@@ -37,6 +37,8 @@ public class GameBootstrap : MonoBehaviour
 
     [Header("Building Settings")]
     [SerializeField] private float buildingRadius = 0.42f;
+    [SerializeField] private float infantryTrainingTime = 3f;
+    [SerializeField] private int maxFactoryQueueSize = 5;
 
     [Header("Health Settings")]
     [SerializeField] private int playerBaseHitPoints = 500;
@@ -68,6 +70,12 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float infantryRadius = 0.42f;
     [SerializeField] private float unitMoveSpeed = 5f;
 
+    [Header("Camera Settings")]
+    [SerializeField] private float cameraMoveSpeed = 14f;
+    [SerializeField] private float cameraZoomSpeed = 3f;
+    [SerializeField] private float minCameraSize = 6f;
+    [SerializeField] private float maxCameraSize = 18f;
+
     [SerializeField] private float dragSelectThreshold = 10f;
 
     private int playerResources;
@@ -89,6 +97,8 @@ public class GameBootstrap : MonoBehaviour
         public Team Team;
         public int MaxHitPoints;
         public int HitPoints;
+        public int InfantryQueue;
+        public float ProductionTimer;
 
         public BuildingData(
             string displayName,
@@ -112,6 +122,8 @@ public class GameBootstrap : MonoBehaviour
             Team = team;
             MaxHitPoints = maxHitPoints;
             HitPoints = maxHitPoints;
+            InfantryQueue = 0;
+            ProductionTimer = 0f;
         }
     }
 
@@ -133,6 +145,7 @@ public class GameBootstrap : MonoBehaviour
         public bool IsMoving;
         public Vector2 TargetPosition;
         public Vector2Int TargetCell;
+        public readonly List<Vector2> Waypoints = new List<Vector2>();
 
         public int AttackDamage;
         public float AttackRange;
@@ -264,7 +277,9 @@ public class GameBootstrap : MonoBehaviour
         }
 
         matchTime += Time.deltaTime;
+        UpdateCameraControls();
         UpdateResources();
+        UpdateFactoryProduction();
         HandleSelectionInput();
         HandleUnitMoveCommand();
         HandlePlacementPreview();
@@ -436,7 +451,7 @@ public class GameBootstrap : MonoBehaviour
         {
             if (GUI.Button(
                     new Rect(panelX + 25f, panelY + 370f, panelWidth - 50f, 35f),
-                    $"生产步兵 ({infantryCost})"
+                    $"步兵 ({infantryCost})  队列 {selectedBuildingData.InfantryQueue}/{maxFactoryQueueSize}"
                 ))
             {
                 TryTrainInfantry(selectedBuildingData);
@@ -452,7 +467,7 @@ public class GameBootstrap : MonoBehaviour
         
         GUI.Label(
             new Rect(20, 20, 650, 30),
-            "操作提示：点击右侧“建筑菜单” → 选择“兵厂” → 移动鼠标预览 → 鼠标右键确认建造。"
+            "操作：WASD/方向键移动镜头，滚轮缩放；右键移动/攻击；Esc 暂停。"
         );
 
         GUI.Label(
@@ -518,7 +533,45 @@ public class GameBootstrap : MonoBehaviour
                 ReturnToMainMenu();
             }
         }
+        DrawWorldHealthBars();
         DrawSelectionRectangle();
+    }
+
+    private void DrawWorldHealthBars()
+    {
+        foreach (BuildingData building in buildings)
+        {
+            DrawHealthBar(building.Position, building.HitPoints, building.MaxHitPoints, 42f);
+        }
+
+        foreach (UnitData unit in units)
+        {
+            DrawHealthBar(unit.Position, unit.HitPoints, unit.MaxHitPoints, 30f);
+        }
+    }
+
+    private void DrawHealthBar(Vector2 worldPosition, int hitPoints, int maxHitPoints, float width)
+    {
+        if (mainCamera == null || maxHitPoints <= 0 || hitPoints >= maxHitPoints)
+        {
+            return;
+        }
+
+        Vector3 screen = mainCamera.WorldToScreenPoint(worldPosition);
+
+        if (screen.z < 0f)
+        {
+            return;
+        }
+
+        float ratio = Mathf.Clamp01((float)hitPoints / maxHitPoints);
+        Rect background = new Rect(screen.x - width / 2f, Screen.height - screen.y - 24f, width, 5f);
+        Color previous = GUI.color;
+        GUI.color = new Color(0.15f, 0.02f, 0.02f, 0.9f);
+        GUI.DrawTexture(background, Texture2D.whiteTexture);
+        GUI.color = ratio > 0.5f ? Color.green : ratio > 0.25f ? Color.yellow : Color.red;
+        GUI.DrawTexture(new Rect(background.x, background.y, background.width * ratio, background.height), Texture2D.whiteTexture);
+        GUI.color = previous;
     }
 
     private void DrawEndGameButtons(float y)
@@ -702,6 +755,36 @@ public class GameBootstrap : MonoBehaviour
         mainCamera.transform.position = new Vector3(0, 0, -10);
         mainCamera.orthographicSize = 18f;
         mainCamera.backgroundColor = new Color(0.08f, 0.08f, 0.09f);
+    }
+
+    private void UpdateCameraControls()
+    {
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        Vector3 position = mainCamera.transform.position;
+        position += new Vector3(input.x, input.y, 0f).normalized * cameraMoveSpeed * Time.deltaTime;
+
+        float scroll = Input.mouseScrollDelta.y;
+        mainCamera.orthographicSize = Mathf.Clamp(
+            mainCamera.orthographicSize - scroll * cameraZoomSpeed,
+            minCameraSize,
+            maxCameraSize
+        );
+
+        float mapHalf = GetMapHalfSize();
+        float verticalExtent = mainCamera.orthographicSize;
+        float horizontalExtent = verticalExtent * mainCamera.aspect;
+        float maxX = Mathf.Max(0f, mapHalf - horizontalExtent);
+        float maxY = Mathf.Max(0f, mapHalf - verticalExtent);
+
+        position.x = Mathf.Clamp(position.x, -maxX, maxX);
+        position.y = Mathf.Clamp(position.y, -maxY, maxY);
+        position.z = -10f;
+        mainCamera.transform.position = position;
     }
 
     private void CreateGrid()
@@ -1293,6 +1376,7 @@ public class GameBootstrap : MonoBehaviour
             unit.AttackTarget = targetBuilding;
             unit.AttackUnitTarget = null;
             unit.IsMoving = false;
+            unit.Waypoints.Clear();
             commandCount++;
         }
 
@@ -1319,6 +1403,7 @@ public class GameBootstrap : MonoBehaviour
             unit.AttackUnitTarget = targetUnit;
             unit.AttackTarget = null;
             unit.IsMoving = false;
+            unit.Waypoints.Clear();
             commandCount++;
         }
 
@@ -1358,6 +1443,13 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        HashSet<Vector2Int> pathBlockedCells = new HashSet<Vector2Int>(occupiedCells);
+
+        foreach (Vector2Int selectedCell in selectedCurrentCells)
+        {
+            pathBlockedCells.Remove(selectedCell);
+        }
+
         foreach (UnitData unit in movableUnits)
         {
             occupiedCells.Remove(unit.Cell);
@@ -1369,6 +1461,20 @@ public class GameBootstrap : MonoBehaviour
         {
             UnitData unit = movableUnits[i];
             Vector2Int targetCell = targetCells[i];
+            List<Vector2Int> path = GridPathfinder.FindPath(
+                unit.Cell,
+                targetCell,
+                mapSize,
+                mapSize,
+                pathBlockedCells
+            );
+
+            if (path.Count == 0)
+            {
+                occupiedCells.Add(unit.Cell);
+                unit.IsMoving = false;
+                continue;
+            }
 
             occupiedCells.Add(targetCell);
 
@@ -1377,7 +1483,15 @@ public class GameBootstrap : MonoBehaviour
             unit.Cell = targetCell;
             unit.TargetCell = targetCell;
             unit.TargetPosition = CellToWorld(targetCell);
+            unit.Waypoints.Clear();
+
+            for (int pathIndex = 1; pathIndex < path.Count; pathIndex++)
+            {
+                unit.Waypoints.Add(CellToWorld(path[pathIndex]));
+            }
+
             unit.IsMoving = true;
+            pathBlockedCells.Add(targetCell);
         }
 
         Debug.Log($"Move command: {moveCount} units -> around cell {centerCell}");
@@ -1470,6 +1584,21 @@ public class GameBootstrap : MonoBehaviour
         selectedUnitData.Cell = targetCell;
         selectedUnitData.TargetCell = targetCell;
         selectedUnitData.TargetPosition = CellToWorld(targetCell);
+        selectedUnitData.Waypoints.Clear();
+
+        List<Vector2Int> path = GridPathfinder.FindPath(
+            WorldToCell(selectedUnitData.Position),
+            targetCell,
+            mapSize,
+            mapSize,
+            occupiedCells
+        );
+
+        for (int i = 1; i < path.Count; i++)
+        {
+            selectedUnitData.Waypoints.Add(CellToWorld(path[i]));
+        }
+
         selectedUnitData.IsMoving = true;
 
         Debug.Log($"Move command: {selectedUnitData.DisplayName} -> cell {targetCell}");
@@ -1593,6 +1722,7 @@ public class GameBootstrap : MonoBehaviour
         unit.AttackUnitTarget = nearestEnemyUnit;
         unit.AttackTarget = null;
         unit.IsMoving = false;
+        unit.Waypoints.Clear();
     }
 
     private UnitData FindNearestEnemyUnitInRange(UnitData sourceUnit, float range)
@@ -1828,9 +1958,12 @@ public class GameBootstrap : MonoBehaviour
             }
 
             Vector2 currentPosition = unit.GameObject.transform.position;
+            Vector2 movementTarget = unit.Waypoints.Count > 0
+                ? unit.Waypoints[0]
+                : unit.TargetPosition;
             Vector2 nextPosition = Vector2.MoveTowards(
                 currentPosition,
-                unit.TargetPosition,
+                movementTarget,
                 unitMoveSpeed * Time.deltaTime
             );
 
@@ -1842,18 +1975,27 @@ public class GameBootstrap : MonoBehaviour
 
             unit.Position = nextPosition;
 
-            if (Vector2.Distance(nextPosition, unit.TargetPosition) < 0.01f)
+            if (Vector2.Distance(nextPosition, movementTarget) < 0.01f)
             {
                 unit.GameObject.transform.position = new Vector3(
-                    unit.TargetPosition.x,
-                    unit.TargetPosition.y,
+                    movementTarget.x,
+                    movementTarget.y,
                     0f
                 );
 
-                unit.Position = unit.TargetPosition;
-                unit.IsMoving = false;
+                unit.Position = movementTarget;
 
-                Debug.Log($"{unit.DisplayName} arrived at cell {unit.Cell}");
+                if (unit.Waypoints.Count > 0)
+                {
+                    unit.Waypoints.RemoveAt(0);
+                }
+
+                unit.IsMoving = unit.Waypoints.Count > 0;
+
+                if (!unit.IsMoving)
+                {
+                    Debug.Log($"{unit.DisplayName} arrived at cell {unit.Cell}");
+                }
             }
 
             if (selectedUnitData == unit && selectionRingObject != null)
@@ -1970,28 +2112,75 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Factory built at cell {cell}. Remaining resources: {playerResources}");
     }
 
-    private void TryTrainInfantry(BuildingData factory)
+    private bool TryTrainInfantry(BuildingData factory)
     {
         if (factory == null || factory.Type != BuildingType.Factory)
         {
             Debug.LogWarning("Cannot train Infantry: selected building is not a Factory.");
-            return;
+            return false;
         }
 
-        if (playerResources < infantryCost)
+        if (factory.InfantryQueue >= maxFactoryQueueSize)
+        {
+            Debug.LogWarning("Cannot train Infantry: the Factory queue is full.");
+            return false;
+        }
+
+        if (!ArenaGameRules.CanQueue(
+                factory.InfantryQueue,
+                maxFactoryQueueSize,
+                playerResources,
+                infantryCost
+            ))
         {
             Debug.LogWarning($"Cannot train Infantry: not enough resources. Need {infantryCost}, have {playerResources}.");
-            return;
-        }
-
-        if (!TryGetSpawnCellNear(factory.Cell, out Vector2Int spawnCell))
-        {
-            Debug.LogWarning("Cannot train Infantry: no valid spawn cell near Factory.");
-            return;
+            return false;
         }
 
         playerResources = ArenaGameRules.Spend(playerResources, infantryCost);
+        factory.InfantryQueue++;
 
+        if (factory.InfantryQueue == 1)
+        {
+            factory.ProductionTimer = infantryTrainingTime;
+        }
+
+        Debug.Log($"Infantry queued. Queue: {factory.InfantryQueue}/{maxFactoryQueueSize}");
+        return true;
+    }
+
+    private void UpdateFactoryProduction()
+    {
+        foreach (BuildingData factory in buildings)
+        {
+            if (factory.Team != Team.Player ||
+                factory.Type != BuildingType.Factory ||
+                factory.InfantryQueue <= 0)
+            {
+                continue;
+            }
+
+            factory.ProductionTimer -= Time.deltaTime;
+
+            if (factory.ProductionTimer > 0f)
+            {
+                continue;
+            }
+
+            if (!TryGetSpawnCellNear(factory.Cell, out Vector2Int spawnCell))
+            {
+                factory.ProductionTimer = 0.5f;
+                continue;
+            }
+
+            SpawnPlayerInfantry(spawnCell);
+            factory.InfantryQueue--;
+            factory.ProductionTimer = factory.InfantryQueue > 0 ? infantryTrainingTime : 0f;
+        }
+    }
+
+    private void SpawnPlayerInfantry(Vector2Int spawnCell)
+    {
         Vector2 spawnPosition = CellToWorld(spawnCell);
 
         GameObject infantryObject = CreateCircleObject(
@@ -2024,7 +2213,7 @@ public class GameBootstrap : MonoBehaviour
         infantry.Id = nextEntityId++;
         units.Add(infantry);
 
-        Debug.Log($"Infantry trained at cell {spawnCell}. Remaining resources: {playerResources}");
+        Debug.Log($"Infantry trained at cell {spawnCell}.");
     }
 
     private bool TryGetSpawnCellNear(Vector2Int originCell, out Vector2Int spawnCell)
@@ -2276,7 +2465,11 @@ public class GameBootstrap : MonoBehaviour
                 building.Position,
                 building.Cell,
                 building.HitPoints,
-                building.MaxHitPoints
+                building.MaxHitPoints,
+                building.InfantryQueue,
+                building.InfantryQueue > 0 && infantryTrainingTime > 0f
+                    ? 1f - Mathf.Clamp01(building.ProductionTimer / infantryTrainingTime)
+                    : 0f
             ));
         }
 
@@ -2378,8 +2571,9 @@ public class GameBootstrap : MonoBehaviour
                         return ArenaActionResult.Reject("Not enough resources.");
                     }
 
-                    TryTrainInfantry(building);
-                    return ArenaActionResult.Success("Infantry training accepted.");
+                    return TryTrainInfantry(building)
+                        ? ArenaActionResult.Success("Infantry training accepted.")
+                        : ArenaActionResult.Reject("The Factory queue is full.");
                 }
             }
 
@@ -2438,7 +2632,9 @@ public class GameBootstrap : MonoBehaviour
         Vector2 position,
         Vector2Int cell,
         int hitPoints,
-        int maxHitPoints
+        int maxHitPoints,
+        int queueCount = 0,
+        float productionProgress = 0f
     )
     {
         return new ArenaEntityObservation
@@ -2451,7 +2647,9 @@ public class GameBootstrap : MonoBehaviour
             CellX = cell.x,
             CellY = cell.y,
             HitPoints = hitPoints,
-            MaxHitPoints = maxHitPoints
+            MaxHitPoints = maxHitPoints,
+            QueueCount = queueCount,
+            ProductionProgress = productionProgress
         };
     }
 }

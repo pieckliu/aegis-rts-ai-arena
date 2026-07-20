@@ -21,4 +21,12 @@ public static class ArenaGameRules
     {
         return resources + Mathf.Max(0, income);
     }
+
+    public static bool CanQueue(int queueCount, int maxQueueSize, int resources, int cost)
+    {
+        return queueCount >= 0 &&
+            maxQueueSize > 0 &&
+            queueCount < maxQueueSize &&
+            CanAfford(resources, cost);
+    }
 }
