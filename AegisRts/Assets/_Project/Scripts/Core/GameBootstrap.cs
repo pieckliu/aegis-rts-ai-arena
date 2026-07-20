@@ -12,6 +12,7 @@ public class GameBootstrap : MonoBehaviour
     private enum BuildingType
     {
         None,
+        Base,
         Factory
     }
 
@@ -60,6 +61,8 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private int startingResources = 500;
     [SerializeField] private int factoryCost = 150;
     [SerializeField] private int infantryCost = 50;
+    [SerializeField] private int passiveResourceIncome = 10;
+    [SerializeField] private float passiveResourceInterval = 5f;
 
     [Header("Unit Settings")]
     [SerializeField] private float infantryRadius = 0.42f;
@@ -68,9 +71,14 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float dragSelectThreshold = 10f;
 
     private int playerResources;
+    private float resourceIncomeTimer;
+    private bool isPaused;
+    private int nextEntityId = 1;
+    private float matchTime;
 
     private class BuildingData
     {
+        public int Id;
         public string DisplayName;
         public BuildingType Type;
         public GameObject GameObject;
@@ -109,6 +117,7 @@ public class GameBootstrap : MonoBehaviour
 
     private class UnitData
     {
+        public int Id;
         public string DisplayName;
         public UnitType Type;
         public GameObject GameObject;
@@ -244,6 +253,18 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            isPaused = !isPaused;
+        }
+
+        if (isPaused)
+        {
+            return;
+        }
+
+        matchTime += Time.deltaTime;
+        UpdateResources();
         HandleSelectionInput();
         HandleUnitMoveCommand();
         HandlePlacementPreview();
@@ -453,6 +474,8 @@ public class GameBootstrap : MonoBehaviour
                 "胜利：AI 基地已被摧毁",
                 victoryStyle
             );
+
+            DrawEndGameButtons(Screen.height * 0.52f);
         }
 
         if (gameLost)
@@ -469,8 +492,46 @@ public class GameBootstrap : MonoBehaviour
                 "失败：玩家基地已被摧毁",
                 defeatStyle
             );
+
+            DrawEndGameButtons(Screen.height * 0.60f);
+        }
+
+        if (isPaused && !gameWon && !gameLost)
+        {
+            GUI.Box(
+                new Rect((Screen.width - 300f) / 2f, Screen.height * 0.35f, 300f, 190f),
+                "游戏已暂停"
+            );
+
+            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 45f, 220f, 35f), "继续"))
+            {
+                isPaused = false;
+            }
+
+            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 90f, 220f, 35f), "重新开始"))
+            {
+                RestartGame();
+            }
+
+            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 135f, 220f, 35f), "返回主菜单"))
+            {
+                ReturnToMainMenu();
+            }
         }
         DrawSelectionRectangle();
+    }
+
+    private void DrawEndGameButtons(float y)
+    {
+        if (GUI.Button(new Rect((Screen.width - 220f) / 2f, y, 220f, 40f), "重新开始"))
+        {
+            RestartGame();
+        }
+
+        if (GUI.Button(new Rect((Screen.width - 220f) / 2f, y + 50f, 220f, 40f), "返回主菜单"))
+        {
+            ReturnToMainMenu();
+        }
     }
 
     private void DrawSelectionRectangle()
@@ -533,6 +594,7 @@ public class GameBootstrap : MonoBehaviour
     private void StartGame()
     {
         gameState = GameState.Playing;
+        isPaused = false;
 
         if (!gameWorldCreated)
         {
@@ -546,6 +608,11 @@ public class GameBootstrap : MonoBehaviour
     private void CreateGameWorld()
     {
         playerResources = startingResources;
+        resourceIncomeTimer = passiveResourceInterval;
+        gameWon = false;
+        gameLost = false;
+        matchTime = 0f;
+        nextEntityId = 1;
 
         gridRoot = new GameObject("GridRoot").transform;
         buildingRoot = new GameObject("BuildingRoot").transform;
@@ -560,6 +627,67 @@ public class GameBootstrap : MonoBehaviour
         enemySpawnTimer = enemySpawnInterval;
 
         Debug.Log($"Starting resources: {playerResources}");
+    }
+
+    private void UpdateResources()
+    {
+        resourceIncomeTimer -= Time.deltaTime;
+
+        if (resourceIncomeTimer > 0f)
+        {
+            return;
+        }
+
+        resourceIncomeTimer = passiveResourceInterval;
+        playerResources = ArenaGameRules.ApplyIncome(playerResources, passiveResourceIncome);
+    }
+
+    private void RestartGame()
+    {
+        DestroyGameWorld();
+        CreateGameWorld();
+        gameWorldCreated = true;
+        gameState = GameState.Playing;
+        isPaused = false;
+    }
+
+    private void ReturnToMainMenu()
+    {
+        DestroyGameWorld();
+        gameWorldCreated = false;
+        gameState = GameState.MainMenu;
+        isPaused = false;
+    }
+
+    private void DestroyGameWorld()
+    {
+        ClearUnitSelectionRings();
+
+        if (gridRoot != null)
+        {
+            Destroy(gridRoot.gameObject);
+        }
+
+        if (buildingRoot != null)
+        {
+            Destroy(buildingRoot.gameObject);
+        }
+
+        buildings.Clear();
+        units.Clear();
+        selectedUnits.Clear();
+        occupiedCells.Clear();
+        selectedBuildingData = null;
+        selectedUnitData = null;
+        playerBaseData = null;
+        enemyBaseData = null;
+        selectedBuilding = BuildingType.None;
+        isBuildMenuOpen = false;
+        hasPreviewCell = false;
+        selectionRingObject = null;
+        placementPreviewObject = null;
+        buildRangeObject = null;
+        baseObject = null;
     }
 
     private void SetupCamera()
@@ -644,7 +772,7 @@ public class GameBootstrap : MonoBehaviour
 
         playerBaseData = new BuildingData(
             "基地",
-            BuildingType.None,
+            BuildingType.Base,
             baseObject,
             basePosition,
             baseCell,
@@ -655,6 +783,7 @@ public class GameBootstrap : MonoBehaviour
         );
 
         buildings.Add(playerBaseData);
+        playerBaseData.Id = nextEntityId++;
 
         Debug.Log($"Base created at cell {baseCell}");
     }
@@ -684,7 +813,7 @@ public class GameBootstrap : MonoBehaviour
 
         enemyBaseData = new BuildingData(
             "AI基地",
-            BuildingType.None,
+            BuildingType.Base,
             enemyBaseObject,
             enemyBasePosition,
             enemyBaseCell,
@@ -694,7 +823,8 @@ public class GameBootstrap : MonoBehaviour
             enemyBaseHitPoints
         );
 
-buildings.Add(enemyBaseData);
+        buildings.Add(enemyBaseData);
+        enemyBaseData.Id = nextEntityId++;
 
         Debug.Log($"Enemy base created at cell {enemyBaseCell}");
     }
@@ -1413,6 +1543,7 @@ buildings.Add(enemyBaseData);
         enemyInfantry.AttackTarget = playerBaseData;
 
         occupiedCells.Add(spawnCell);
+        enemyInfantry.Id = nextEntityId++;
         units.Add(enemyInfantry);
 
         Debug.Log($"Enemy infantry spawned at cell {spawnCell} and is attacking player base.");
@@ -1524,7 +1655,7 @@ buildings.Add(enemyBaseData);
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints -= attacker.AttackDamage;
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
 
         Debug.Log($"{attacker.DisplayName} attacked {target.DisplayName}. HP: {target.HitPoints}/{target.MaxHitPoints}");
 
@@ -1561,7 +1692,7 @@ buildings.Add(enemyBaseData);
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints -= attacker.AttackDamage;
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
 
         Debug.Log($"{attacker.DisplayName} attacked {target.DisplayName}. HP: {target.HitPoints}/{target.MaxHitPoints}");
 
@@ -1587,6 +1718,22 @@ buildings.Add(enemyBaseData);
         );
 
         unit.Position = nextPosition;
+        SyncCombatMovementCell(unit);
+    }
+
+    private void SyncCombatMovementCell(UnitData unit)
+    {
+        Vector2Int currentCell = WorldToCell(unit.Position);
+
+        if (currentCell == unit.Cell)
+        {
+            return;
+        }
+
+        occupiedCells.Remove(unit.Cell);
+        unit.Cell = currentCell;
+        unit.TargetCell = currentCell;
+        occupiedCells.Add(currentCell);
     }
 
     private void DestroyUnit(UnitData unit)
@@ -1654,13 +1801,13 @@ buildings.Add(enemyBaseData);
             Destroy(building.GameObject);
         }
 
-        if (building.Team == Team.Enemy && building.DisplayName == "AI基地")
+        if (building == enemyBaseData)
         {
             gameWon = true;
             Debug.Log("Victory! Enemy AI base destroyed.");
         }
 
-        if (building.Team == Team.Player && building.DisplayName == "基地")
+        if (building == playerBaseData)
         {
             gameLost = true;
             Debug.Log("Defeat! Player base destroyed.");
@@ -1791,7 +1938,7 @@ buildings.Add(enemyBaseData);
 
     private void BuildFactory(Vector2 position, Vector2Int cell)
     {
-        playerResources -= factoryCost;
+        playerResources = ArenaGameRules.Spend(playerResources, factoryCost);
 
         GameObject factoryObject = CreateCircleObject(
             "Factory",
@@ -1804,7 +1951,7 @@ buildings.Add(enemyBaseData);
 
         CreateWorldLabel(factoryObject.transform, "兵厂", Color.black);
 
-        buildings.Add(new BuildingData(
+        BuildingData factory = new BuildingData(
             "兵厂",
             BuildingType.Factory,
             factoryObject,
@@ -1814,7 +1961,9 @@ buildings.Add(enemyBaseData);
             "兵厂：后续用于生产步兵、载具等单位。",
             Team.Player,
             factoryHitPoints
-        ));
+        );
+        factory.Id = nextEntityId++;
+        buildings.Add(factory);
         
         occupiedCells.Add(cell);
 
@@ -1841,7 +1990,7 @@ buildings.Add(enemyBaseData);
             return;
         }
 
-        playerResources -= infantryCost;
+        playerResources = ArenaGameRules.Spend(playerResources, infantryCost);
 
         Vector2 spawnPosition = CellToWorld(spawnCell);
 
@@ -1872,6 +2021,7 @@ buildings.Add(enemyBaseData);
         );
 
         occupiedCells.Add(spawnCell);
+        infantry.Id = nextEntityId++;
         units.Add(infantry);
 
         Debug.Log($"Infantry trained at cell {spawnCell}. Remaining resources: {playerResources}");
@@ -1937,7 +2087,7 @@ buildings.Add(enemyBaseData);
 
     private bool CanAffordBuilding(BuildingType buildingType)
     {
-        return playerResources >= GetBuildingCost(buildingType);
+        return ArenaGameRules.CanAfford(playerResources, GetBuildingCost(buildingType));
     }
 
     private bool CanBuildAt(Vector2 worldPosition, Vector2Int cell)
@@ -2110,5 +2260,198 @@ buildings.Add(enemyBaseData);
         texture.Apply();
 
         return texture;
+    }
+
+    public ArenaObservation GetArenaObservation()
+    {
+        List<ArenaEntityObservation> buildingObservations = new List<ArenaEntityObservation>();
+        List<ArenaEntityObservation> unitObservations = new List<ArenaEntityObservation>();
+
+        foreach (BuildingData building in buildings)
+        {
+            buildingObservations.Add(ToObservation(
+                building.Id,
+                building.Type.ToString(),
+                building.Team,
+                building.Position,
+                building.Cell,
+                building.HitPoints,
+                building.MaxHitPoints
+            ));
+        }
+
+        foreach (UnitData unit in units)
+        {
+            unitObservations.Add(ToObservation(
+                unit.Id,
+                unit.Type.ToString(),
+                unit.Team,
+                unit.Position,
+                unit.Cell,
+                unit.HitPoints,
+                unit.MaxHitPoints
+            ));
+        }
+
+        return new ArenaObservation
+        {
+            MatchTime = matchTime,
+            PlayerResources = playerResources,
+            IsTerminal = gameWon || gameLost,
+            Result = gameWon ? "PlayerWon" : gameLost ? "PlayerLost" : "Running",
+            Buildings = buildingObservations.ToArray(),
+            Units = unitObservations.ToArray()
+        };
+    }
+
+    public string GetArenaObservationJson()
+    {
+        return JsonUtility.ToJson(GetArenaObservation());
+    }
+
+    public ArenaActionResult ExecuteArenaAction(ArenaAction action)
+    {
+        if (gameState != GameState.Playing || gameWon || gameLost || isPaused)
+        {
+            return ArenaActionResult.Reject("The match is not accepting actions.");
+        }
+
+        if (action == null || string.IsNullOrEmpty(action.Type))
+        {
+            return ArenaActionResult.Reject("Action type is required.");
+        }
+
+        if (action.Type == "Move")
+        {
+            List<UnitData> actors = FindPlayerUnits(action.UnitIds);
+
+            if (actors.Count == 0)
+            {
+                return ArenaActionResult.Reject("No valid player units.");
+            }
+
+            SelectMultipleUnits(actors);
+            TryMoveSelectedUnitsToCell(new Vector2Int(action.CellX, action.CellY));
+            return ArenaActionResult.Success("Move command accepted.");
+        }
+
+        if (action.Type == "Attack")
+        {
+            List<UnitData> actors = FindPlayerUnits(action.UnitIds);
+
+            if (actors.Count == 0)
+            {
+                return ArenaActionResult.Reject("No valid player units.");
+            }
+
+            SelectMultipleUnits(actors);
+
+            foreach (UnitData targetUnit in units)
+            {
+                if (targetUnit.Id == action.TargetId && targetUnit.Team == Team.Enemy)
+                {
+                    TryAttackSelectedUnits(targetUnit);
+                    return ArenaActionResult.Success("Unit attack command accepted.");
+                }
+            }
+
+            foreach (BuildingData targetBuilding in buildings)
+            {
+                if (targetBuilding.Id == action.TargetId && targetBuilding.Team == Team.Enemy)
+                {
+                    TryAttackSelectedUnits(targetBuilding);
+                    return ArenaActionResult.Success("Building attack command accepted.");
+                }
+            }
+
+            return ArenaActionResult.Reject("Enemy target was not found.");
+        }
+
+        if (action.Type == "TrainInfantry")
+        {
+            foreach (BuildingData building in buildings)
+            {
+                if (building.Team == Team.Player && building.Type == BuildingType.Factory)
+                {
+                    if (!ArenaGameRules.CanAfford(playerResources, infantryCost))
+                    {
+                        return ArenaActionResult.Reject("Not enough resources.");
+                    }
+
+                    TryTrainInfantry(building);
+                    return ArenaActionResult.Success("Infantry training accepted.");
+                }
+            }
+
+            return ArenaActionResult.Reject("No player factory exists.");
+        }
+
+        if (action.Type == "BuildFactory")
+        {
+            Vector2Int cell = new Vector2Int(action.CellX, action.CellY);
+            Vector2 position = CellToWorld(cell);
+            BuildingType previousSelection = selectedBuilding;
+            selectedBuilding = BuildingType.Factory;
+            bool canBuild = IsCellInsideMap(cell) && CanBuildAt(position, cell);
+            selectedBuilding = previousSelection;
+
+            if (!canBuild)
+            {
+                return ArenaActionResult.Reject("Factory cannot be built at that cell.");
+            }
+
+            BuildFactory(position, cell);
+            return ArenaActionResult.Success("Factory construction accepted.");
+        }
+
+        return ArenaActionResult.Reject("Unknown action type.");
+    }
+
+    private List<UnitData> FindPlayerUnits(int[] ids)
+    {
+        List<UnitData> result = new List<UnitData>();
+
+        if (ids == null)
+        {
+            return result;
+        }
+
+        foreach (int id in ids)
+        {
+            foreach (UnitData unit in units)
+            {
+                if (unit.Id == id && unit.Team == Team.Player && !result.Contains(unit))
+                {
+                    result.Add(unit);
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private ArenaEntityObservation ToObservation(
+        int id,
+        string kind,
+        Team team,
+        Vector2 position,
+        Vector2Int cell,
+        int hitPoints,
+        int maxHitPoints
+    )
+    {
+        return new ArenaEntityObservation
+        {
+            Id = id,
+            Kind = kind,
+            Team = team.ToString(),
+            X = position.x,
+            Y = position.y,
+            CellX = cell.x,
+            CellY = cell.y,
+            HitPoints = hitPoints,
+            MaxHitPoints = maxHitPoints
+        };
     }
 }
