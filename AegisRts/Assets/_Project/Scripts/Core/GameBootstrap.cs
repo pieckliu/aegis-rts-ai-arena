@@ -56,8 +56,12 @@ public class GameBootstrap : MonoBehaviour
 
     [SerializeField] private float dragSelectThreshold = 10f;
 
-    private int playerResources;
-    private float resourceIncomeTimer;
+    private RtsEconomyProductionSystem economy;
+    private ArenaOrchestrator arena;
+    private RtsEntityLifecycle lifecycle;
+    private RtsCombatSystem combat;
+    private RtsSelectionInputController selectionInput;
+    private RtsGameUIController ui;
     private bool isPaused;
     private int nextEntityId = 1;
     private float matchTime;
@@ -72,7 +76,6 @@ public class GameBootstrap : MonoBehaviour
     private Transform buildingRoot;
 
     private Sprite circleSprite;
-    private Texture2D menuBackgroundTexture;
 
     private GameObject baseObject;
     private GameObject buildRangeObject;
@@ -84,7 +87,6 @@ public class GameBootstrap : MonoBehaviour
     private Vector2 currentPreviewPosition;
     private Vector2Int currentPreviewCell;
 
-    private bool isBuildMenuOpen = false;
     private bool hasPreviewCell = false;
     private bool gameWorldCreated = false;
 
@@ -105,10 +107,6 @@ public class GameBootstrap : MonoBehaviour
     private readonly List<UnitData> selectedUnits = new List<UnitData>();
     private readonly Dictionary<UnitData, GameObject> unitSelectionRings = new Dictionary<UnitData, GameObject>();
 
-    private bool isDraggingSelection = false;
-    private Vector2 dragStartScreenPosition;
-    private Vector2 dragCurrentScreenPosition;
-
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
 
     private void Awake()
@@ -118,11 +116,44 @@ public class GameBootstrap : MonoBehaviour
             : Resources.Load<RtsGameConfig>("RtsGameConfig");
 
         ApplyGameConfig();
+        economy = new RtsEconomyProductionSystem(gameConfig);
+        arena = new ArenaOrchestrator(
+            gameConfig,
+            economy,
+            buildings,
+            units,
+            () => matchTime,
+            () => gameState == GameState.Playing && !gameWon && !gameLost && !isPaused,
+            () => gameWon,
+            () => gameLost,
+            CommandMoveUnits,
+            CommandAttackUnit,
+            CommandAttackBuilding,
+            TryTrainInfantry,
+            TryBuildFactoryAtCell
+        );
+        lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            occupiedCells,
+            OnUnitRemoved,
+            OnBuildingRemoved
+        );
+        combat = new RtsCombatSystem(gameConfig, buildings, units, MoveUnitTowards, lifecycle);
+        selectionInput = new RtsSelectionInputController(dragSelectThreshold);
+        ui = new RtsGameUIController(
+            StartGame,
+            SelectFactory,
+            CancelBuildMode,
+            TrainSelectedFactory,
+            ResumeGame,
+            RestartGame,
+            ReturnToMainMenu
+        );
         mainCamera = Camera.main;
         cameraController = gameObject.AddComponent<RtsCameraController>();
 
         circleSprite = CreateCircleSprite(128);
-        menuBackgroundTexture = CreateMenuBackgroundTexture();
 
         cameraController.Configure(
             mainCamera,
@@ -206,348 +237,21 @@ public class GameBootstrap : MonoBehaviour
 
         matchTime += Time.deltaTime;
         cameraController.Tick(Time.deltaTime);
-        UpdateResources();
-        UpdateFactoryProduction();
-        HandleSelectionInput();
+        economy.TickIncome(Time.deltaTime);
+        economy.TickProduction(Time.deltaTime, buildings, TrySpawnPlayerInfantry);
+        selectionInput.TickSelection(
+            selectedBuilding == BuildingType.None,
+            IsPointerOverUI,
+            HandleSingleClickSelection,
+            SelectUnitsInDragRect
+        );
         HandleUnitMoveCommand();
         HandlePlacementPreview();
         HandlePlacementConfirm();
         UpdateEnemyAI();
-        UpdateUnitCombat();
+        combat.Tick(Time.deltaTime);
         UpdateUnitMovement();
         UpdateSelectionRingPositions();
-    }
-
-    private void OnGUI()
-    {
-        if (gameState == GameState.MainMenu)
-        {
-            DrawMainMenu();
-        }
-        else
-        {
-            DrawGameUI();
-        }
-    }
-
-    private void DrawMainMenu()
-    {
-        GUI.DrawTexture(
-            new Rect(0, 0, Screen.width, Screen.height),
-            menuBackgroundTexture,
-            ScaleMode.StretchToFill
-        );
-
-        GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 42,
-            alignment = TextAnchor.MiddleCenter
-        };
-        titleStyle.normal.textColor = Color.white;
-
-        GUI.Label(
-            new Rect(0, Screen.height * 0.25f, Screen.width, 80),
-            "Aegis RTS AI Arena",
-            titleStyle
-        );
-
-        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontSize = 28
-        };
-
-        Rect startButtonRect = new Rect(
-            (Screen.width - 220) / 2f,
-            Screen.height * 0.5f,
-            220,
-            70
-        );
-
-        if (GUI.Button(startButtonRect, "开始", buttonStyle))
-        {
-            StartGame();
-        }
-    }
-
-    private void DrawGameUI()
-    {
-        float panelWidth = 220f;
-        float panelHeight = 450f;
-        float panelX = Screen.width - panelWidth - 20f;
-        float panelY = 20f;
-
-        GUI.Box(new Rect(panelX, panelY, panelWidth, panelHeight), "建造菜单");
-
-        Rect dropdownRect = new Rect(panelX + 15f, panelY + 40f, panelWidth - 30f, 35f);
-
-        if (GUI.Button(dropdownRect, isBuildMenuOpen ? "建筑菜单 ▲" : "建筑菜单 ▼"))
-        {
-            isBuildMenuOpen = !isBuildMenuOpen;
-        }
-
-        if (isBuildMenuOpen)
-        {
-            Rect factoryRect = new Rect(panelX + 15f, panelY + 80f, panelWidth - 30f, 35f);
-
-            if (GUI.Button(factoryRect, $"兵厂 ({factoryCost})"))
-            {
-                SelectFactory();
-                isBuildMenuOpen = false;
-            }
-        }
-
-        string selectedText = selectedBuilding == BuildingType.Factory
-            ? "当前：兵厂"
-            : "当前：无";
-
-        GUI.Label(new Rect(panelX + 15f, panelY + 130f, panelWidth - 30f, 25f), selectedText);
-
-        if (selectedBuilding != BuildingType.None)
-        {
-            Rect cancelRect = new Rect(panelX + 15f, panelY + 165f, panelWidth - 30f, 35f);
-
-            if (GUI.Button(cancelRect, "取消建造"))
-            {
-                CancelBuildMode();
-            }
-        }
-
-        GUI.Box(new Rect(panelX + 15f, panelY + 215f, panelWidth - 30f, 115f), "建筑信息");
-
-        if (selectedBuildingData != null)
-        {
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
-                "选中：" + selectedBuildingData.DisplayName
-            );
-
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
-                selectedBuildingData.Description
-            );
-
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 315f, panelWidth - 50f, 25f),
-                $"生命值：{selectedBuildingData.HitPoints}/{selectedBuildingData.MaxHitPoints}"
-            );
-        }
-        else if (selectedUnits.Count > 0)
-        {
-            if (selectedUnits.Count == 1)
-            {
-                UnitData selectedUnit = selectedUnits[0];
-
-                GUI.Label(
-                    new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
-                    "选中单位：" + selectedUnit.DisplayName
-                );
-
-                GUI.Label(
-                    new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
-                    selectedUnit.Description
-                );
-
-                GUI.Label(
-                    new Rect(panelX + 25f, panelY + 315f, panelWidth - 50f, 25f),
-                    $"生命值：{selectedUnit.HitPoints}/{selectedUnit.MaxHitPoints}"
-                );
-            }
-            else
-            {
-                GUI.Label(
-                    new Rect(panelX + 25f, panelY + 245f, panelWidth - 50f, 25f),
-                    $"已选中单位：{selectedUnits.Count}"
-                );
-
-                GUI.Label(
-                    new Rect(panelX + 25f, panelY + 270f, panelWidth - 50f, 55f),
-                    "右键点击地图可群体移动；右键点击 AI 基地可群体攻击。"
-                );
-            }
-        }
-        else
-        {
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 250f, panelWidth - 50f, 25f),
-                "未选中对象"
-            );
-        }
-
-        GUI.Box(new Rect(panelX + 15f, panelY + 340f, panelWidth - 30f, 80f), "生产单位");
-
-        if (selectedBuildingData != null && selectedBuildingData.Type == BuildingType.Factory)
-        {
-            if (GUI.Button(
-                    new Rect(panelX + 25f, panelY + 370f, panelWidth - 50f, 35f),
-                    $"步兵 ({infantryCost})  队列 {selectedBuildingData.InfantryQueue}/{maxFactoryQueueSize}"
-                ))
-            {
-                TryTrainInfantry(selectedBuildingData);
-            }
-        }
-        else
-        {
-            GUI.Label(
-                new Rect(panelX + 25f, panelY + 370f, panelWidth - 50f, 35f),
-                "请选择兵厂"
-            );
-        }
-        
-        GUI.Label(
-            new Rect(20, 20, 650, 30),
-            "操作：WASD/方向键移动镜头，滚轮缩放；右键移动/攻击；Esc 暂停。"
-        );
-
-        GUI.Label(
-        new Rect(20, 50, 650, 30),
-        $"资源：{playerResources}    兵厂成本：{factoryCost}    步兵成本：{infantryCost}"
-        );
-
-        if (gameWon)
-        {
-            GUIStyle victoryStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 38,
-                alignment = TextAnchor.MiddleCenter
-            };
-            victoryStyle.normal.textColor = Color.yellow;
-
-            GUI.Label(
-                new Rect(0, Screen.height * 0.38f, Screen.width, 80),
-                "胜利：AI 基地已被摧毁",
-                victoryStyle
-            );
-
-            DrawEndGameButtons(Screen.height * 0.52f);
-        }
-
-        if (gameLost)
-        {
-            GUIStyle defeatStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 38,
-                alignment = TextAnchor.MiddleCenter
-            };
-            defeatStyle.normal.textColor = Color.red;
-
-            GUI.Label(
-                new Rect(0, Screen.height * 0.48f, Screen.width, 80),
-                "失败：玩家基地已被摧毁",
-                defeatStyle
-            );
-
-            DrawEndGameButtons(Screen.height * 0.60f);
-        }
-
-        if (isPaused && !gameWon && !gameLost)
-        {
-            GUI.Box(
-                new Rect((Screen.width - 300f) / 2f, Screen.height * 0.35f, 300f, 190f),
-                "游戏已暂停"
-            );
-
-            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 45f, 220f, 35f), "继续"))
-            {
-                isPaused = false;
-            }
-
-            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 90f, 220f, 35f), "重新开始"))
-            {
-                RestartGame();
-            }
-
-            if (GUI.Button(new Rect((Screen.width - 220f) / 2f, Screen.height * 0.35f + 135f, 220f, 35f), "返回主菜单"))
-            {
-                ReturnToMainMenu();
-            }
-        }
-        DrawWorldHealthBars();
-        DrawSelectionRectangle();
-    }
-
-    private void DrawWorldHealthBars()
-    {
-        foreach (BuildingData building in buildings)
-        {
-            DrawHealthBar(building.Position, building.HitPoints, building.MaxHitPoints, 42f);
-        }
-
-        foreach (UnitData unit in units)
-        {
-            DrawHealthBar(unit.Position, unit.HitPoints, unit.MaxHitPoints, 30f);
-        }
-    }
-
-    private void DrawHealthBar(Vector2 worldPosition, int hitPoints, int maxHitPoints, float width)
-    {
-        if (mainCamera == null || maxHitPoints <= 0 || hitPoints >= maxHitPoints)
-        {
-            return;
-        }
-
-        Vector3 screen = mainCamera.WorldToScreenPoint(worldPosition);
-
-        if (screen.z < 0f)
-        {
-            return;
-        }
-
-        float ratio = Mathf.Clamp01((float)hitPoints / maxHitPoints);
-        Rect background = new Rect(screen.x - width / 2f, Screen.height - screen.y - 24f, width, 5f);
-        Color previous = GUI.color;
-        GUI.color = new Color(0.15f, 0.02f, 0.02f, 0.9f);
-        GUI.DrawTexture(background, Texture2D.whiteTexture);
-        GUI.color = ratio > 0.5f ? Color.green : ratio > 0.25f ? Color.yellow : Color.red;
-        GUI.DrawTexture(new Rect(background.x, background.y, background.width * ratio, background.height), Texture2D.whiteTexture);
-        GUI.color = previous;
-    }
-
-    private void DrawEndGameButtons(float y)
-    {
-        if (GUI.Button(new Rect((Screen.width - 220f) / 2f, y, 220f, 40f), "重新开始"))
-        {
-            RestartGame();
-        }
-
-        if (GUI.Button(new Rect((Screen.width - 220f) / 2f, y + 50f, 220f, 40f), "返回主菜单"))
-        {
-            ReturnToMainMenu();
-        }
-    }
-
-    private void DrawSelectionRectangle()
-    {
-        if (!isDraggingSelection)
-        {
-            return;
-        }
-
-        float dragDistance = Vector2.Distance(dragStartScreenPosition, dragCurrentScreenPosition);
-
-        if (dragDistance < dragSelectThreshold)
-        {
-            return;
-        }
-
-        Rect guiRect = GetGuiRect(dragStartScreenPosition, dragCurrentScreenPosition);
-
-        Color previousColor = GUI.color;
-
-        GUI.color = new Color(0.2f, 0.8f, 1f, 0.18f);
-        GUI.DrawTexture(guiRect, Texture2D.whiteTexture);
-
-        GUI.color = new Color(0.2f, 0.8f, 1f, 0.85f);
-        DrawRectBorder(guiRect, 2f);
-
-        GUI.color = previousColor;
-    }
-
-    private void DrawRectBorder(Rect rect, float thickness)
-    {
-        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, rect.width, thickness), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(rect.xMin, rect.yMax - thickness, rect.width, thickness), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(rect.xMax - thickness, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
     }
 
     private Rect GetScreenRect(Vector2 screenStart, Vector2 screenEnd)
@@ -588,8 +292,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void CreateGameWorld()
     {
-        playerResources = startingResources;
-        resourceIncomeTimer = passiveResourceInterval;
+        economy.Reset();
         gameWon = false;
         gameLost = false;
         matchTime = 0f;
@@ -607,20 +310,7 @@ public class GameBootstrap : MonoBehaviour
 
         enemySpawnTimer = enemySpawnInterval;
 
-        Debug.Log($"Starting resources: {playerResources}");
-    }
-
-    private void UpdateResources()
-    {
-        resourceIncomeTimer -= Time.deltaTime;
-
-        if (resourceIncomeTimer > 0f)
-        {
-            return;
-        }
-
-        resourceIncomeTimer = passiveResourceInterval;
-        playerResources = ArenaGameRules.ApplyIncome(playerResources, passiveResourceIncome);
+        Debug.Log($"Starting resources: {economy.Resources}");
     }
 
     private void RestartGame()
@@ -663,7 +353,6 @@ public class GameBootstrap : MonoBehaviour
         playerBaseData = null;
         enemyBaseData = null;
         selectedBuilding = BuildingType.None;
-        isBuildMenuOpen = false;
         hasPreviewCell = false;
         selectionRingObject = null;
         placementPreviewObject = null;
@@ -842,7 +531,7 @@ public class GameBootstrap : MonoBehaviour
     {
         if (!CanAffordBuilding(BuildingType.Factory))
         {
-            Debug.LogWarning($"Cannot select Factory: not enough resources. Need {factoryCost}, have {playerResources}.");
+            Debug.LogWarning($"Cannot select Factory: not enough resources. Need {factoryCost}, have {economy.Resources}.");
             return;
         }
 
@@ -880,53 +569,6 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log("Build mode cancelled.");
     }
 
-    private void HandleSelectionInput()
-    {
-        if (selectedBuilding != BuildingType.None)
-        {
-            return;
-        }
-
-        if (Input.GetMouseButtonDown(0))
-        {
-            if (IsMouseOverRightPanel())
-            {
-                return;
-            }
-
-            isDraggingSelection = true;
-            dragStartScreenPosition = Input.mousePosition;
-            dragCurrentScreenPosition = dragStartScreenPosition;
-        }
-
-        if (isDraggingSelection && Input.GetMouseButton(0))
-        {
-            dragCurrentScreenPosition = Input.mousePosition;
-        }
-
-        if (isDraggingSelection && Input.GetMouseButtonUp(0))
-        {
-            isDraggingSelection = false;
-            dragCurrentScreenPosition = Input.mousePosition;
-
-            if (IsMouseOverRightPanel())
-            {
-                return;
-            }
-
-            float dragDistance = Vector2.Distance(dragStartScreenPosition, dragCurrentScreenPosition);
-
-            if (dragDistance >= dragSelectThreshold)
-            {
-                SelectUnitsInDragRect();
-            }
-            else
-            {
-                HandleSingleClickSelection();
-            }
-        }
-    }
-
     private void HandleSingleClickSelection()
     {
         Vector2 mouseWorldPosition = GetMouseWorldPosition();
@@ -953,7 +595,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void SelectUnitsInDragRect()
     {
-        Rect selectionRect = GetScreenRect(dragStartScreenPosition, dragCurrentScreenPosition);
+        Rect selectionRect = GetScreenRect(selectionInput.DragStart, selectionInput.DragCurrent);
 
         List<UnitData> unitsInRect = new List<UnitData>();
 
@@ -980,23 +622,6 @@ public class GameBootstrap : MonoBehaviour
         {
             ClearSelectedBuilding();
         }
-    }
-
-    private bool IsMouseOverRightPanel()
-    {
-        float panelWidth = 220f;
-        float panelHeight = 450f;
-        float panelX = Screen.width - panelWidth - 20f;
-        float panelY = 20f;
-
-        Vector2 mousePositionInGui = new Vector2(
-            Input.mousePosition.x,
-            Screen.height - Input.mousePosition.y
-        );
-
-        Rect rightPanelRect = new Rect(panelX, panelY, panelWidth, panelHeight);
-
-        return rightPanelRect.Contains(mousePositionInGui);
     }
 
     private BuildingData FindBuildingAt(Vector2 worldPosition)
@@ -1182,12 +807,7 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
-        if (!Input.GetMouseButtonDown(1))
-        {
-            return;
-        }
-
-        if (IsMouseOverRightPanel())
+        if (!selectionInput.ConsumeCommandClick(true, IsPointerOverUI))
         {
             return;
         }
@@ -1219,25 +839,6 @@ public class GameBootstrap : MonoBehaviour
         Vector2Int targetCell = WorldToCell(mouseWorldPosition);
 
         TryMoveSelectedUnitsToCell(targetCell);
-    }
-
-    private void TryAttackSelectedUnit(BuildingData targetBuilding)
-    {
-        if (selectedUnitData == null)
-        {
-            return;
-        }
-
-        if (targetBuilding == null || targetBuilding.Team != Team.Enemy)
-        {
-            Debug.LogWarning("Cannot attack: invalid target.");
-            return;
-        }
-
-        selectedUnitData.AttackTarget = targetBuilding;
-        selectedUnitData.IsMoving = false;
-
-        Debug.Log($"Attack command: {selectedUnitData.DisplayName} -> {targetBuilding.DisplayName}");
     }
 
     private void TryAttackSelectedUnits(BuildingData targetBuilding)
@@ -1435,59 +1036,6 @@ public class GameBootstrap : MonoBehaviour
 
         return result;
     }
-    private void TryMoveSelectedUnitToCell(Vector2Int targetCell)
-    {
-        if (selectedUnitData == null)
-        {
-            return;
-        }
-
-        if (!IsCellInsideMap(targetCell))
-        {
-            Debug.LogWarning("Cannot move unit: target cell is outside the map.");
-            return;
-        }
-
-        if (targetCell == selectedUnitData.Cell)
-        {
-            Debug.Log("Unit is already at the target cell.");
-            return;
-        }
-
-        if (occupiedCells.Contains(targetCell))
-        {
-            Debug.LogWarning($"Cannot move unit: target cell {targetCell} is occupied.");
-            return;
-        }
-
-        selectedUnitData.AttackTarget = null;
-        selectedUnitData.AttackUnitTarget = null;
-        occupiedCells.Remove(selectedUnitData.Cell);
-        occupiedCells.Add(targetCell);
-
-        selectedUnitData.Cell = targetCell;
-        selectedUnitData.TargetCell = targetCell;
-        selectedUnitData.TargetPosition = CellToWorld(targetCell);
-        selectedUnitData.Waypoints.Clear();
-
-        List<Vector2Int> path = GridPathfinder.FindPath(
-            WorldToCell(selectedUnitData.Position),
-            targetCell,
-            mapSize,
-            mapSize,
-            occupiedCells
-        );
-
-        for (int i = 1; i < path.Count; i++)
-        {
-            selectedUnitData.Waypoints.Add(CellToWorld(path[i]));
-        }
-
-        selectedUnitData.IsMoving = true;
-
-        Debug.Log($"Move command: {selectedUnitData.DisplayName} -> cell {targetCell}");
-    }
-
     private void UpdateEnemyAI()
     {
         if (enemyBaseData == null || !buildings.Contains(enemyBaseData))
@@ -1562,161 +1110,6 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Enemy infantry spawned at cell {spawnCell} and is attacking player base.");
     }
     
-    private void UpdateUnitCombat()
-    {
-        UnitData[] unitsSnapshot = units.ToArray();
-
-        foreach (UnitData unit in unitsSnapshot)
-        {
-            if (unit == null || !units.Contains(unit))
-            {
-                continue;
-            }
-
-            TryAutoAcquireUnitTarget(unit);
-
-            if (unit.AttackUnitTarget != null)
-            {
-                UpdateUnitAttackUnit(unit);
-                continue;
-            }
-
-            if (unit.AttackTarget != null)
-            {
-                UpdateUnitAttackBuilding(unit);
-                continue;
-            }
-        }
-    }
-
-    private void TryAutoAcquireUnitTarget(UnitData unit)
-    {
-        if (unit == null)
-        {
-            return;
-        }
-
-        UnitData nearestEnemyUnit = FindNearestEnemyUnitInRange(unit, unitAggroRange);
-
-        if (nearestEnemyUnit == null)
-        {
-            return;
-        }
-
-        unit.AttackUnitTarget = nearestEnemyUnit;
-        unit.AttackTarget = null;
-        unit.IsMoving = false;
-        unit.Waypoints.Clear();
-    }
-
-    private UnitData FindNearestEnemyUnitInRange(UnitData sourceUnit, float range)
-    {
-        UnitData nearestUnit = null;
-        float nearestDistance = float.MaxValue;
-
-        foreach (UnitData candidate in units)
-        {
-            if (candidate == null)
-            {
-                continue;
-            }
-
-            if (candidate.Team == sourceUnit.Team)
-            {
-                continue;
-            }
-
-            float distance = Vector2.Distance(sourceUnit.Position, candidate.Position);
-
-            if (distance > range)
-            {
-                continue;
-            }
-
-            if (distance < nearestDistance)
-            {
-                nearestDistance = distance;
-                nearestUnit = candidate;
-            }
-        }
-
-        return nearestUnit;
-    }
-
-    private void UpdateUnitAttackUnit(UnitData attacker)
-    {
-        UnitData target = attacker.AttackUnitTarget;
-
-        if (target == null || !units.Contains(target))
-        {
-            attacker.AttackUnitTarget = null;
-            return;
-        }
-
-        float distance = Vector2.Distance(attacker.Position, target.Position);
-
-        if (distance > attacker.AttackRange)
-        {
-            MoveUnitTowards(attacker, target.Position);
-            return;
-        }
-
-        attacker.AttackTimer -= Time.deltaTime;
-
-        if (attacker.AttackTimer > 0f)
-        {
-            return;
-        }
-
-        attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-
-        Debug.Log($"{attacker.DisplayName} attacked {target.DisplayName}. HP: {target.HitPoints}/{target.MaxHitPoints}");
-
-        if (target.HitPoints <= 0)
-        {
-            DestroyUnit(target);
-            attacker.AttackUnitTarget = null;
-        }
-    }
-
-    private void UpdateUnitAttackBuilding(UnitData attacker)
-    {
-        BuildingData target = attacker.AttackTarget;
-
-        if (target == null || !buildings.Contains(target))
-        {
-            attacker.AttackTarget = null;
-            return;
-        }
-
-        float distance = Vector2.Distance(attacker.Position, target.Position);
-
-        if (distance > attacker.AttackRange)
-        {
-            MoveUnitTowards(attacker, target.Position);
-            return;
-        }
-
-        attacker.AttackTimer -= Time.deltaTime;
-
-        if (attacker.AttackTimer > 0f)
-        {
-            return;
-        }
-
-        attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-
-        Debug.Log($"{attacker.DisplayName} attacked {target.DisplayName}. HP: {target.HitPoints}/{target.MaxHitPoints}");
-
-        if (target.HitPoints <= 0)
-        {
-            DestroyBuilding(target);
-            attacker.AttackTarget = null;
-        }
-    }
-
     private void MoveUnitTowards(UnitData unit, Vector2 targetPosition)
     {
         Vector2 nextPosition = Vector2.MoveTowards(
@@ -1750,18 +1143,49 @@ public class GameBootstrap : MonoBehaviour
         occupiedCells.Add(currentCell);
     }
 
-    private void DestroyUnit(UnitData unit)
+    private void LateUpdate()
     {
-        if (unit == null)
-        {
-            return;
-        }
+        ui.Refresh(
+            gameState,
+            isPaused,
+            gameWon,
+            gameLost,
+            economy.Resources,
+            factoryCost,
+            infantryCost,
+            maxFactoryQueueSize,
+            selectedBuilding,
+            selectedBuildingData,
+            selectedUnits,
+            selectionInput,
+            buildings,
+            units,
+            mainCamera
+        );
+    }
 
-        Debug.Log($"{unit.DisplayName} destroyed.");
+    private void OnDestroy()
+    {
+        ui?.Destroy();
+    }
 
-        units.Remove(unit);
-        occupiedCells.Remove(unit.Cell);
+    private bool IsPointerOverUI()
+    {
+        return ui != null && ui.IsPointerOverUI();
+    }
 
+    private void TrainSelectedFactory()
+    {
+        TryTrainInfantry(selectedBuildingData);
+    }
+
+    private void ResumeGame()
+    {
+        isPaused = false;
+    }
+
+    private void OnUnitRemoved(UnitData unit)
+    {
         if (selectedUnitData == unit)
         {
             selectedUnitData = null;
@@ -1779,40 +1203,13 @@ public class GameBootstrap : MonoBehaviour
             unitSelectionRings.Remove(unit);
         }
 
-        foreach (UnitData otherUnit in units)
-        {
-            if (otherUnit.AttackUnitTarget == unit)
-            {
-                otherUnit.AttackUnitTarget = null;
-            }
-        }
-
-        if (unit.GameObject != null)
-        {
-            Destroy(unit.GameObject);
-        }
     }
 
-    private void DestroyBuilding(BuildingData building)
+    private void OnBuildingRemoved(BuildingData building)
     {
-        if (building == null)
-        {
-            return;
-        }
-
-        Debug.Log($"{building.DisplayName} destroyed.");
-
-        buildings.Remove(building);
-        occupiedCells.Remove(building.Cell);
-
         if (selectedBuildingData == building)
         {
             selectedBuildingData = null;
-        }
-
-        if (building.GameObject != null)
-        {
-            Destroy(building.GameObject);
         }
 
         if (building == enemyBaseData)
@@ -1949,7 +1346,7 @@ public class GameBootstrap : MonoBehaviour
         {
             if (!CanAffordBuilding(selectedBuilding))
             {
-                Debug.LogWarning($"Cannot build: not enough resources. Need {GetBuildingCost(selectedBuilding)}, have {playerResources}.");
+                Debug.LogWarning($"Cannot build: not enough resources. Need {GetBuildingCost(selectedBuilding)}, have {economy.Resources}.");
             }
             else
             {
@@ -1964,7 +1361,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void BuildFactory(Vector2 position, Vector2Int cell)
     {
-        playerResources = ArenaGameRules.Spend(playerResources, factoryCost);
+        economy.TrySpend(factoryCost);
 
         GameObject factoryObject = CreateCircleObject(
             "Factory",
@@ -1993,74 +1390,23 @@ public class GameBootstrap : MonoBehaviour
         
         occupiedCells.Add(cell);
 
-        Debug.Log($"Factory built at cell {cell}. Remaining resources: {playerResources}");
+        Debug.Log($"Factory built at cell {cell}. Remaining resources: {economy.Resources}");
     }
 
     private bool TryTrainInfantry(BuildingData factory)
     {
-        if (factory == null || factory.Type != BuildingType.Factory)
-        {
-            Debug.LogWarning("Cannot train Infantry: selected building is not a Factory.");
-            return false;
-        }
-
-        if (factory.InfantryQueue >= maxFactoryQueueSize)
-        {
-            Debug.LogWarning("Cannot train Infantry: the Factory queue is full.");
-            return false;
-        }
-
-        if (!ArenaGameRules.CanQueue(
-                factory.InfantryQueue,
-                maxFactoryQueueSize,
-                playerResources,
-                infantryCost
-            ))
-        {
-            Debug.LogWarning($"Cannot train Infantry: not enough resources. Need {infantryCost}, have {playerResources}.");
-            return false;
-        }
-
-        playerResources = ArenaGameRules.Spend(playerResources, infantryCost);
-        factory.InfantryQueue++;
-
-        if (factory.InfantryQueue == 1)
-        {
-            factory.ProductionTimer = infantryTrainingTime;
-        }
-
-        Debug.Log($"Infantry queued. Queue: {factory.InfantryQueue}/{maxFactoryQueueSize}");
-        return true;
+        return economy.TryQueueInfantry(factory);
     }
 
-    private void UpdateFactoryProduction()
+    private bool TrySpawnPlayerInfantry(BuildingData factory)
     {
-        foreach (BuildingData factory in buildings)
+        if (!TryGetSpawnCellNear(factory.Cell, out Vector2Int spawnCell))
         {
-            if (factory.Team != Team.Player ||
-                factory.Type != BuildingType.Factory ||
-                factory.InfantryQueue <= 0)
-            {
-                continue;
-            }
-
-            factory.ProductionTimer -= Time.deltaTime;
-
-            if (factory.ProductionTimer > 0f)
-            {
-                continue;
-            }
-
-            if (!TryGetSpawnCellNear(factory.Cell, out Vector2Int spawnCell))
-            {
-                factory.ProductionTimer = 0.5f;
-                continue;
-            }
-
-            SpawnPlayerInfantry(spawnCell);
-            factory.InfantryQueue--;
-            factory.ProductionTimer = factory.InfantryQueue > 0 ? infantryTrainingTime : 0f;
+            return false;
         }
+
+        SpawnPlayerInfantry(spawnCell);
+        return true;
     }
 
     private void SpawnPlayerInfantry(Vector2Int spawnCell)
@@ -2160,7 +1506,7 @@ public class GameBootstrap : MonoBehaviour
 
     private bool CanAffordBuilding(BuildingType buildingType)
     {
-        return ArenaGameRules.CanAfford(playerResources, GetBuildingCost(buildingType));
+        return economy.CanAfford(GetBuildingCost(buildingType));
     }
 
     private bool CanBuildAt(Vector2 worldPosition, Vector2Int cell)
@@ -2321,219 +1667,54 @@ public class GameBootstrap : MonoBehaviour
         );
     }
 
-    private Texture2D CreateMenuBackgroundTexture()
-    {
-        Texture2D texture = new Texture2D(2, 2);
-
-        texture.SetPixel(0, 0, new Color(0.03f, 0.04f, 0.06f));
-        texture.SetPixel(1, 0, new Color(0.05f, 0.08f, 0.12f));
-        texture.SetPixel(0, 1, new Color(0.08f, 0.12f, 0.18f));
-        texture.SetPixel(1, 1, new Color(0.04f, 0.05f, 0.07f));
-
-        texture.Apply();
-
-        return texture;
-    }
-
     public ArenaObservation GetArenaObservation()
     {
-        List<ArenaEntityObservation> buildingObservations = new List<ArenaEntityObservation>();
-        List<ArenaEntityObservation> unitObservations = new List<ArenaEntityObservation>();
-
-        foreach (BuildingData building in buildings)
-        {
-            buildingObservations.Add(ToObservation(
-                building.Id,
-                building.Type.ToString(),
-                building.Team,
-                building.Position,
-                building.Cell,
-                building.HitPoints,
-                building.MaxHitPoints,
-                building.InfantryQueue,
-                building.InfantryQueue > 0 && infantryTrainingTime > 0f
-                    ? 1f - Mathf.Clamp01(building.ProductionTimer / infantryTrainingTime)
-                    : 0f
-            ));
-        }
-
-        foreach (UnitData unit in units)
-        {
-            unitObservations.Add(ToObservation(
-                unit.Id,
-                unit.Type.ToString(),
-                unit.Team,
-                unit.Position,
-                unit.Cell,
-                unit.HitPoints,
-                unit.MaxHitPoints
-            ));
-        }
-
-        return new ArenaObservation
-        {
-            MatchTime = matchTime,
-            PlayerResources = playerResources,
-            IsTerminal = gameWon || gameLost,
-            Result = gameWon ? "PlayerWon" : gameLost ? "PlayerLost" : "Running",
-            Buildings = buildingObservations.ToArray(),
-            Units = unitObservations.ToArray()
-        };
+        return arena.GetObservation();
     }
 
     public string GetArenaObservationJson()
     {
-        return JsonUtility.ToJson(GetArenaObservation());
+        return arena.GetObservationJson();
     }
 
     public ArenaActionResult ExecuteArenaAction(ArenaAction action)
     {
-        if (gameState != GameState.Playing || gameWon || gameLost || isPaused)
-        {
-            return ArenaActionResult.Reject("The match is not accepting actions.");
-        }
-
-        if (action == null || string.IsNullOrEmpty(action.Type))
-        {
-            return ArenaActionResult.Reject("Action type is required.");
-        }
-
-        if (action.Type == "Move")
-        {
-            List<UnitData> actors = FindPlayerUnits(action.UnitIds);
-
-            if (actors.Count == 0)
-            {
-                return ArenaActionResult.Reject("No valid player units.");
-            }
-
-            SelectMultipleUnits(actors);
-            TryMoveSelectedUnitsToCell(new Vector2Int(action.CellX, action.CellY));
-            return ArenaActionResult.Success("Move command accepted.");
-        }
-
-        if (action.Type == "Attack")
-        {
-            List<UnitData> actors = FindPlayerUnits(action.UnitIds);
-
-            if (actors.Count == 0)
-            {
-                return ArenaActionResult.Reject("No valid player units.");
-            }
-
-            SelectMultipleUnits(actors);
-
-            foreach (UnitData targetUnit in units)
-            {
-                if (targetUnit.Id == action.TargetId && targetUnit.Team == Team.Enemy)
-                {
-                    TryAttackSelectedUnits(targetUnit);
-                    return ArenaActionResult.Success("Unit attack command accepted.");
-                }
-            }
-
-            foreach (BuildingData targetBuilding in buildings)
-            {
-                if (targetBuilding.Id == action.TargetId && targetBuilding.Team == Team.Enemy)
-                {
-                    TryAttackSelectedUnits(targetBuilding);
-                    return ArenaActionResult.Success("Building attack command accepted.");
-                }
-            }
-
-            return ArenaActionResult.Reject("Enemy target was not found.");
-        }
-
-        if (action.Type == "TrainInfantry")
-        {
-            foreach (BuildingData building in buildings)
-            {
-                if (building.Team == Team.Player && building.Type == BuildingType.Factory)
-                {
-                    if (!ArenaGameRules.CanAfford(playerResources, infantryCost))
-                    {
-                        return ArenaActionResult.Reject("Not enough resources.");
-                    }
-
-                    return TryTrainInfantry(building)
-                        ? ArenaActionResult.Success("Infantry training accepted.")
-                        : ArenaActionResult.Reject("The Factory queue is full.");
-                }
-            }
-
-            return ArenaActionResult.Reject("No player factory exists.");
-        }
-
-        if (action.Type == "BuildFactory")
-        {
-            Vector2Int cell = new Vector2Int(action.CellX, action.CellY);
-            Vector2 position = CellToWorld(cell);
-            BuildingType previousSelection = selectedBuilding;
-            selectedBuilding = BuildingType.Factory;
-            bool canBuild = IsCellInsideMap(cell) && CanBuildAt(position, cell);
-            selectedBuilding = previousSelection;
-
-            if (!canBuild)
-            {
-                return ArenaActionResult.Reject("Factory cannot be built at that cell.");
-            }
-
-            BuildFactory(position, cell);
-            return ArenaActionResult.Success("Factory construction accepted.");
-        }
-
-        return ArenaActionResult.Reject("Unknown action type.");
+        return arena.Execute(action);
     }
 
-    private List<UnitData> FindPlayerUnits(int[] ids)
+    private void CommandMoveUnits(List<UnitData> actors, Vector2Int cell)
     {
-        List<UnitData> result = new List<UnitData>();
-
-        if (ids == null)
-        {
-            return result;
-        }
-
-        foreach (int id in ids)
-        {
-            foreach (UnitData unit in units)
-            {
-                if (unit.Id == id && unit.Team == Team.Player && !result.Contains(unit))
-                {
-                    result.Add(unit);
-                    break;
-                }
-            }
-        }
-
-        return result;
+        SelectMultipleUnits(actors);
+        TryMoveSelectedUnitsToCell(cell);
     }
 
-    private ArenaEntityObservation ToObservation(
-        int id,
-        string kind,
-        Team team,
-        Vector2 position,
-        Vector2Int cell,
-        int hitPoints,
-        int maxHitPoints,
-        int queueCount = 0,
-        float productionProgress = 0f
-    )
+    private void CommandAttackUnit(List<UnitData> actors, UnitData target)
     {
-        return new ArenaEntityObservation
-        {
-            Id = id,
-            Kind = kind,
-            Team = team.ToString(),
-            X = position.x,
-            Y = position.y,
-            CellX = cell.x,
-            CellY = cell.y,
-            HitPoints = hitPoints,
-            MaxHitPoints = maxHitPoints,
-            QueueCount = queueCount,
-            ProductionProgress = productionProgress
-        };
+        SelectMultipleUnits(actors);
+        TryAttackSelectedUnits(target);
     }
+
+    private void CommandAttackBuilding(List<UnitData> actors, BuildingData target)
+    {
+        SelectMultipleUnits(actors);
+        TryAttackSelectedUnits(target);
+    }
+
+    private bool TryBuildFactoryAtCell(Vector2Int cell)
+    {
+        Vector2 position = CellToWorld(cell);
+        BuildingType previousSelection = selectedBuilding;
+        selectedBuilding = BuildingType.Factory;
+        bool canBuild = IsCellInsideMap(cell) && CanBuildAt(position, cell);
+        selectedBuilding = previousSelection;
+
+        if (!canBuild)
+        {
+            return false;
+        }
+
+        BuildFactory(position, cell);
+        return true;
+    }
+
 }

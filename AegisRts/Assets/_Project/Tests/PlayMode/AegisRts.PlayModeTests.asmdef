@@ -1,0 +1,11 @@
+{
+  "name": "AegisRts.PlayModeTests",
+  "references": [
+    "AegisRts.Core"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "autoReferenced": false,
+  "noEngineReferences": false
+}

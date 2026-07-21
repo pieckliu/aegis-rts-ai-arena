@@ -30,6 +30,7 @@ Playable Unity vertical slice:
 - select, box-select, move, and command groups to attack;
 - navigate groups around occupied grid cells;
 - pan and zoom the bounded battlefield camera;
+- use a runtime uGUI menu, command panel, overlays, selection rectangle, and health bars;
 - fight an automatically spawning enemy army;
 - win, lose, pause, restart, and return to the menu;
 - query structured match observations and submit agent actions through the Arena API.
