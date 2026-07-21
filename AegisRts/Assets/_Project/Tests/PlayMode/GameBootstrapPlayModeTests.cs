@@ -28,22 +28,12 @@ public sealed class GameBootstrapPlayModeTests
 
         yield return null;
 
-        GameObject playerBase = GameObject.Find("Base");
         Canvas canvas = ui.GetComponent<Canvas>();
         RectTransform[] healthBars = ui
             .GetComponentsInChildren<RectTransform>(true)
             .Where(rect => rect.name == "HealthBar")
             .ToArray();
-        Vector3 expectedScreen = Camera.main.WorldToScreenPoint(
-            playerBase.transform.position + Vector3.up * 0.61f
-        );
-        Vector2 expectedCanvas = new Vector2(expectedScreen.x, expectedScreen.y) / canvas.scaleFactor;
-        float nearestDistance = healthBars.Min(
-            bar => Vector2.Distance(bar.anchoredPosition, expectedCanvas)
-        );
-
-        Assert.GreaterOrEqual(healthBars.Length, 2);
-        Assert.Less(nearestDistance, 2f, "A health bar should be anchored directly above the player base.");
+        Assert.AreEqual(0, healthBars.Length, "Undamaged and unselected buildings should not show health bars.");
 
         GameBootstrap bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
         ArenaActionResult buildResult = bootstrap.ExecuteArenaAction(new ArenaAction
@@ -68,15 +58,15 @@ public sealed class GameBootstrapPlayModeTests
             .GetComponentsInChildren<RectTransform>(true)
             .Where(rect => rect.name == "HealthBar")
             .ToArray();
-        expectedScreen = Camera.main.WorldToScreenPoint(
+        Vector3 expectedScreen = Camera.main.WorldToScreenPoint(
             infantry.transform.position + Vector3.up * 0.58f
         );
-        expectedCanvas = new Vector2(expectedScreen.x, expectedScreen.y) / canvas.scaleFactor;
-        nearestDistance = healthBars.Min(
+        Vector2 expectedCanvas = new Vector2(expectedScreen.x, expectedScreen.y) / canvas.scaleFactor;
+        float nearestDistance = healthBars.Min(
             bar => Vector2.Distance(bar.anchoredPosition, expectedCanvas)
         );
 
-        Assert.GreaterOrEqual(healthBars.Length, 4);
+        Assert.AreEqual(1, healthBars.Length, "Every infantry unit should have exactly one visible health bar.");
         Assert.Less(nearestDistance, 2f, "The infantry health bar should stay directly above its unit.");
     }
 }

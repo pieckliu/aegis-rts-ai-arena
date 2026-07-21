@@ -143,7 +143,7 @@ internal sealed class RtsGameUIController
         overlayPanel.SetActive(paused || won || lost);
         overlayTitle.text = won ? "胜利" : lost ? "失败" : "游戏已暂停";
         UpdateSelectionRectangle(selectionInput);
-        UpdateHealthViews(buildings, units, camera);
+        UpdateHealthViews(buildings, units, selectedBuilding, camera);
     }
 
     public void Destroy()
@@ -167,13 +167,40 @@ internal sealed class RtsGameUIController
         selectionRect.sizeDelta = max - min;
     }
 
-    private void UpdateHealthViews(IList<BuildingData> buildings, IList<UnitData> units, Camera camera)
+    private void UpdateHealthViews(
+        IList<BuildingData> buildings,
+        IList<UnitData> units,
+        BuildingData selectedBuilding,
+        Camera camera
+    )
     {
         HashSet<object> visible = new HashSet<object>();
 
         foreach (BuildingData building in buildings)
         {
-            UpdateHealthView(building, building.Position, building.Radius, building.HitPoints, building.MaxHitPoints, camera, visible);
+            bool isTargeted = false;
+
+            foreach (UnitData unit in units)
+            {
+                if (unit.AttackTarget == building)
+                {
+                    isTargeted = true;
+                    break;
+                }
+            }
+
+            if (building == selectedBuilding || building.HitPoints < building.MaxHitPoints || isTargeted)
+            {
+                UpdateHealthView(
+                    building,
+                    building.Position,
+                    building.Radius,
+                    building.HitPoints,
+                    building.MaxHitPoints,
+                    camera,
+                    visible
+                );
+            }
         }
 
         foreach (UnitData unit in units)
