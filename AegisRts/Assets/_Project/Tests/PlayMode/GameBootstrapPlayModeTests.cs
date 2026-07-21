@@ -35,7 +35,7 @@ public sealed class GameBootstrapPlayModeTests
             .ToArray();
         Assert.AreEqual(0, healthBars.Length, "Undamaged and unselected buildings should not show health bars.");
 
-        GameBootstrap bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+        GameBootstrap bootstrap = Object.FindAnyObjectByType<GameBootstrap>();
         ArenaActionResult buildResult = bootstrap.ExecuteArenaAction(new ArenaAction
         {
             Type = "BuildFactory",

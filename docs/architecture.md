@@ -8,6 +8,8 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GridMapService` owns map bounds, coordinate conversion, occupied cells, and nearby open-cell lookup.
 - `BuildingPlacementSystem` validates and atomically reserves paid building placements.
 - `UnitMovementSystem` owns formation-cell assignment, path requests, movement updates, and combat pursuit movement.
+- `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
+- `EntityPresentationFactory` owns runtime grid lines, circle sprites, world labels, and presentation resource cleanup.
 - `GameDomain` owns shared team, entity-type, building, and unit runtime models.
 - `RtsCameraController` owns camera setup, movement, zoom, and map bounds.
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
@@ -23,11 +25,10 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 
 The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. `GameBootstrap` loads it at startup and falls back to scene values only if the asset is missing.
 
-## Remaining extractions
+## Extraction status
 
-The remaining responsibilities should leave `GameBootstrap` in this order:
+The initial runtime extraction is complete. `GameBootstrap` now coordinates match state, domain registration, and the extracted systems instead of implementing each subsystem internally.
 
-1. enemy spawning and strategy;
-2. runtime entity presentation and prefab creation.
+The next presentation step is to replace the factory's generated circles and labels with prefab-backed unit and building views. Enemy strategy can evolve behind `EnemyAISystem` without changing the Arena contract.
 
 Each extraction should retain the existing Arena contract and add Edit Mode or Play Mode coverage before behavior changes are introduced.
