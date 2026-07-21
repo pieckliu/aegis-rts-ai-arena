@@ -5,6 +5,93 @@ using UnityEngine;
 public sealed class RuntimeSystemsTests
 {
     [Test]
+    public void EnemyAI_SpawnsOnIntervalAndTargetsPlayerBase()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        BuildingData playerBase = new BuildingData(
+            "Player Base",
+            BuildingType.Base,
+            null,
+            gridMap.CellToWorld(new Vector2Int(28, 28)),
+            new Vector2Int(28, 28),
+            0.5f,
+            string.Empty,
+            Team.Player,
+            500
+        );
+        BuildingData enemyBase = new BuildingData(
+            "Enemy Base",
+            BuildingType.Base,
+            null,
+            gridMap.CellToWorld(new Vector2Int(2, 2)),
+            new Vector2Int(2, 2),
+            0.5f,
+            string.Empty,
+            Team.Enemy,
+            500
+        );
+        List<BuildingData> buildings = new List<BuildingData> { playerBase, enemyBase };
+        List<UnitData> spawnedUnits = new List<UnitData>();
+        EnemyAISystem enemyAI = new EnemyAISystem(
+            config,
+            gridMap,
+            buildings,
+            cell =>
+            {
+                UnitData unit = CreateUnitAt(gridMap, cell, "Enemy", Team.Enemy);
+                spawnedUnits.Add(unit);
+                return unit;
+            }
+        );
+
+        Assert.IsFalse(enemyAI.Tick(config.EnemySpawnInterval * 0.5f, playerBase, enemyBase));
+        Assert.IsTrue(enemyAI.Tick(config.EnemySpawnInterval * 0.5f, playerBase, enemyBase));
+        Assert.AreEqual(1, spawnedUnits.Count);
+        Assert.AreSame(playerBase, spawnedUnits[0].AttackTarget);
+        Assert.IsNull(spawnedUnits[0].AttackUnitTarget);
+
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void PresentationFactory_CreatesLabeledCircleAndUpdatesColor()
+    {
+        EntityPresentationFactory presentation = new EntityPresentationFactory(16);
+        GameObject root = new GameObject("PresentationRoot");
+
+        try
+        {
+            GameObject circle = presentation.CreateLabeledCircle(
+                "TestEntity",
+                new Vector2(2f, 3f),
+                0.5f,
+                Color.red,
+                20,
+                root.transform,
+                "AI",
+                Color.white
+            );
+            SpriteRenderer renderer = circle.GetComponent<SpriteRenderer>();
+            TextMesh label = circle.GetComponentInChildren<TextMesh>();
+
+            Assert.IsNotNull(renderer);
+            Assert.IsNotNull(renderer.sprite);
+            Assert.IsNotNull(label);
+            Assert.AreEqual("AI", label.text);
+            Assert.AreEqual(root.transform, circle.transform.parent);
+
+            presentation.SetCircleColor(circle, Color.green);
+            Assert.AreEqual(Color.green, renderer.color);
+        }
+        finally
+        {
+            Object.DestroyImmediate(root);
+            presentation.Dispose();
+        }
+    }
+
+    [Test]
     public void GridMap_ConvertsCoordinatesAndFindsOpenSpawnCell()
     {
         GridMapService gridMap = new GridMapService(10, 1f);
@@ -235,7 +322,8 @@ public sealed class RuntimeSystemsTests
     private static UnitData CreateUnitAt(
         GridMapService gridMap,
         Vector2Int cell,
-        string displayName
+        string displayName,
+        Team team = Team.Player
     )
     {
         gridMap.TryOccupy(cell);
@@ -248,7 +336,7 @@ public sealed class RuntimeSystemsTests
             cell,
             0.4f,
             string.Empty,
-            Team.Player,
+            team,
             100,
             10,
             1f,

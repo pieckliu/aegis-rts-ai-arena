@@ -32,7 +32,6 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float unitAggroRange = 4f;
 
     [Header("Enemy AI Settings")]
-    [SerializeField] private float enemySpawnInterval = 15f;
     [SerializeField] private int enemyInfantryAttackDamage = 10;
     [SerializeField] private float enemyInfantryAttackRange = 1.2f;
     [SerializeField] private float enemyInfantryAttackCooldown = 1.2f;
@@ -59,6 +58,8 @@ public class GameBootstrap : MonoBehaviour
     private GridMapService gridMap;
     private BuildingPlacementSystem placement;
     private UnitMovementSystem movement;
+    private EnemyAISystem enemyAI;
+    private EntityPresentationFactory presentation;
     private ArenaOrchestrator arena;
     private RtsEntityLifecycle lifecycle;
     private RtsCombatSystem combat;
@@ -77,8 +78,6 @@ public class GameBootstrap : MonoBehaviour
     private Transform gridRoot;
     private Transform buildingRoot;
 
-    private Sprite circleSprite;
-
     private GameObject baseObject;
     private GameObject buildRangeObject;
     private GameObject placementPreviewObject;
@@ -95,7 +94,6 @@ public class GameBootstrap : MonoBehaviour
     private bool gameWon = false;
 
     private bool gameLost = false;
-    private float enemySpawnTimer = 0f;
 
     private BuildingData playerBaseData = null;
     private BuildingData enemyBaseData = null;
@@ -120,6 +118,8 @@ public class GameBootstrap : MonoBehaviour
         gridMap = new GridMapService(mapSize, cellSize);
         placement = new BuildingPlacementSystem(gameConfig, economy, gridMap);
         movement = new UnitMovementSystem(gameConfig, gridMap, units);
+        presentation = new EntityPresentationFactory();
+        enemyAI = new EnemyAISystem(gameConfig, gridMap, buildings, CreateEnemyInfantry);
         arena = new ArenaOrchestrator(
             gameConfig,
             economy,
@@ -155,8 +155,6 @@ public class GameBootstrap : MonoBehaviour
         );
         mainCamera = Camera.main;
         cameraController = gameObject.AddComponent<RtsCameraController>();
-
-        circleSprite = CreateCircleSprite(128);
 
         cameraController.Configure(
             mainCamera,
@@ -198,7 +196,6 @@ public class GameBootstrap : MonoBehaviour
         playerInfantryHitPoints = gameConfig.PlayerInfantryHitPoints;
         enemyInfantryHitPoints = gameConfig.EnemyInfantryHitPoints;
         unitAggroRange = gameConfig.UnitAggroRange;
-        enemySpawnInterval = gameConfig.EnemySpawnInterval;
         enemyInfantryAttackDamage = gameConfig.EnemyInfantryAttackDamage;
         enemyInfantryAttackRange = gameConfig.EnemyInfantryAttackRange;
         enemyInfantryAttackCooldown = gameConfig.EnemyInfantryAttackCooldown;
@@ -250,7 +247,7 @@ public class GameBootstrap : MonoBehaviour
         HandleUnitMoveCommand();
         HandlePlacementPreview();
         HandlePlacementConfirm();
-        UpdateEnemyAI();
+        enemyAI.Tick(Time.deltaTime, playerBaseData, enemyBaseData);
         combat.Tick(Time.deltaTime);
         movement.Tick(Time.deltaTime);
         UpdateSelectionRingPositions();
@@ -310,7 +307,7 @@ public class GameBootstrap : MonoBehaviour
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
 
-        enemySpawnTimer = enemySpawnInterval;
+        enemyAI.Reset();
 
         Debug.Log($"Starting resources: {economy.Resources}");
     }
@@ -366,43 +363,24 @@ public class GameBootstrap : MonoBehaviour
     {
         float half = gridMap.HalfSize;
 
-        Material lineMaterial = new Material(Shader.Find("Sprites/Default"));
-
         for (int i = 0; i <= mapSize; i++)
         {
             float position = -half + i * cellSize;
 
-            CreateLine(
+            presentation.CreateGridLine(
                 new Vector3(position, -half, 0),
                 new Vector3(position, half, 0),
-                lineMaterial
+                gridRoot
             );
 
-            CreateLine(
+            presentation.CreateGridLine(
                 new Vector3(-half, position, 0),
                 new Vector3(half, position, 0),
-                lineMaterial
+                gridRoot
             );
         }
 
         Debug.Log($"Grid created: {mapSize} x {mapSize}");
-    }
-
-    private void CreateLine(Vector3 start, Vector3 end, Material material)
-    {
-        GameObject lineObject = new GameObject("GridLine");
-        lineObject.transform.SetParent(gridRoot);
-
-        LineRenderer lineRenderer = lineObject.AddComponent<LineRenderer>();
-        lineRenderer.material = material;
-        lineRenderer.positionCount = 2;
-        lineRenderer.SetPosition(0, start);
-        lineRenderer.SetPosition(1, end);
-        lineRenderer.startWidth = 0.025f;
-        lineRenderer.endWidth = 0.025f;
-        lineRenderer.startColor = new Color(1f, 1f, 1f, 0.15f);
-        lineRenderer.endColor = new Color(1f, 1f, 1f, 0.15f);
-        lineRenderer.sortingOrder = -10;
     }
 
     private void CreateBase()
@@ -417,16 +395,16 @@ public class GameBootstrap : MonoBehaviour
         Vector2Int baseCell = gridMap.WorldToCell(basePosition);
         gridMap.TryOccupy(baseCell);
 
-        baseObject = CreateCircleObject(
+        baseObject = presentation.CreateLabeledCircle(
             "Base",
             basePosition,
             baseRadius,
             new Color(0.25f, 0.55f, 1f, 1f),
             20,
-            buildingRoot
+            buildingRoot,
+            "基地",
+            Color.white
         );
-
-        CreateWorldLabel(baseObject.transform, "基地", Color.white);
 
         playerBaseData = new BuildingData(
             "基地",
@@ -458,16 +436,16 @@ public class GameBootstrap : MonoBehaviour
         Vector2Int enemyBaseCell = gridMap.WorldToCell(enemyBasePosition);
         gridMap.TryOccupy(enemyBaseCell);
 
-        GameObject enemyBaseObject = CreateCircleObject(
+        GameObject enemyBaseObject = presentation.CreateLabeledCircle(
             "EnemyBase",
             enemyBasePosition,
             baseRadius,
             new Color(1f, 0.25f, 0.25f, 1f),
             20,
-            buildingRoot
+            buildingRoot,
+            "AI",
+            Color.white
         );
-
-        CreateWorldLabel(enemyBaseObject.transform, "AI", Color.white);
 
         enemyBaseData = new BuildingData(
             "AI基地",
@@ -489,7 +467,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void CreateBuildRangeObject()
     {
-        buildRangeObject = CreateCircleObject(
+        buildRangeObject = presentation.CreateCircle(
             "BuildRange",
             basePosition,
             buildRadius,
@@ -503,7 +481,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void CreatePlacementPreviewObject()
     {
-        placementPreviewObject = CreateCircleObject(
+        placementPreviewObject = presentation.CreateCircle(
             "PlacementPreview",
             Vector2.zero,
             buildingRadius,
@@ -517,7 +495,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void CreateSelectionRingObject()
     {
-        selectionRingObject = CreateCircleObject(
+        selectionRingObject = presentation.CreateCircle(
             "SelectionRing",
             Vector2.zero,
             0.7f,
@@ -727,7 +705,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void CreateUnitSelectionRing(UnitData unit)
     {
-        GameObject ringObject = CreateCircleObject(
+        GameObject ringObject = presentation.CreateCircle(
             "UnitSelectionRing",
             unit.Position,
             unit.Radius * 1.5f,
@@ -910,55 +888,20 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Move command: {moveCount} units -> around cell {centerCell}");
     }
 
-    private void UpdateEnemyAI()
+    private UnitData CreateEnemyInfantry(Vector2Int spawnCell)
     {
-        if (enemyBaseData == null || !buildings.Contains(enemyBaseData))
-        {
-            return;
-        }
-
-        if (playerBaseData == null || !buildings.Contains(playerBaseData))
-        {
-            return;
-        }
-
-        enemySpawnTimer -= Time.deltaTime;
-
-        if (enemySpawnTimer > 0f)
-        {
-            return;
-        }
-
-        enemySpawnTimer = enemySpawnInterval;
-
-        SpawnEnemyInfantry();
-    }
-
-    private void SpawnEnemyInfantry()
-    {
-        if (enemyBaseData == null)
-        {
-            return;
-        }
-
-        if (!gridMap.TryFindOpenCellNear(enemyBaseData.Cell, out Vector2Int spawnCell))
-        {
-            Debug.LogWarning("Enemy AI cannot spawn infantry: no valid spawn cell.");
-            return;
-        }
-
         Vector2 spawnPosition = gridMap.CellToWorld(spawnCell);
 
-        GameObject enemyInfantryObject = CreateCircleObject(
+        GameObject enemyInfantryObject = presentation.CreateLabeledCircle(
             "EnemyInfantry",
             spawnPosition,
             infantryRadius,
             new Color(1f, 0.45f, 0.15f, 1f),
             25,
-            buildingRoot
+            buildingRoot,
+            "敌",
+            Color.black
         );
-
-        CreateWorldLabel(enemyInfantryObject.transform, "敌", Color.black);
 
         UnitData enemyInfantry = new UnitData(
             "敌方步兵",
@@ -975,13 +918,10 @@ public class GameBootstrap : MonoBehaviour
             enemyInfantryAttackCooldown
         );
 
-        enemyInfantry.AttackTarget = playerBaseData;
-
         gridMap.TryOccupy(spawnCell);
         enemyInfantry.Id = nextEntityId++;
         units.Add(enemyInfantry);
-
-        Debug.Log($"Enemy infantry spawned at cell {spawnCell} and is attacking player base.");
+        return enemyInfantry;
     }
     
     private void MoveUnitTowards(UnitData unit, Vector2 targetPosition)
@@ -1013,6 +953,7 @@ public class GameBootstrap : MonoBehaviour
     private void OnDestroy()
     {
         ui?.Destroy();
+        presentation?.Dispose();
     }
 
     private bool IsPointerOverUI()
@@ -1156,16 +1097,16 @@ public class GameBootstrap : MonoBehaviour
             return false;
         }
 
-        GameObject factoryObject = CreateCircleObject(
+        GameObject factoryObject = presentation.CreateLabeledCircle(
             "Factory",
             position,
             buildingRadius,
             new Color(0.35f, 0.9f, 0.45f, 1f),
             20,
-            buildingRoot
+            buildingRoot,
+            "兵厂",
+            Color.black
         );
-
-        CreateWorldLabel(factoryObject.transform, "兵厂", Color.black);
 
         BuildingData factory = new BuildingData(
             "兵厂",
@@ -1205,16 +1146,16 @@ public class GameBootstrap : MonoBehaviour
     {
         Vector2 spawnPosition = gridMap.CellToWorld(spawnCell);
 
-        GameObject infantryObject = CreateCircleObject(
+        GameObject infantryObject = presentation.CreateLabeledCircle(
             "Infantry",
             spawnPosition,
             infantryRadius,
             new Color(0.95f, 0.95f, 0.25f, 1f),
             25,
-            buildingRoot
+            buildingRoot,
+            "兵",
+            Color.black
         );
-
-        CreateWorldLabel(infantryObject.transform, "兵", Color.black);
 
         UnitData infantry = new UnitData(
             "步兵",
@@ -1245,46 +1186,6 @@ public class GameBootstrap : MonoBehaviour
         return new Vector2(worldPosition.x, worldPosition.y);
     }
 
-    private GameObject CreateCircleObject(
-        string objectName,
-        Vector2 position,
-        float radius,
-        Color color,
-        int sortingOrder,
-        Transform parent
-    )
-    {
-        GameObject circleObject = new GameObject(objectName);
-        circleObject.transform.SetParent(parent);
-        circleObject.transform.position = new Vector3(position.x, position.y, 0f);
-        circleObject.transform.localScale = Vector3.one * radius * 2f;
-
-        SpriteRenderer spriteRenderer = circleObject.AddComponent<SpriteRenderer>();
-        spriteRenderer.sprite = circleSprite;
-        spriteRenderer.color = color;
-        spriteRenderer.sortingOrder = sortingOrder;
-
-        return circleObject;
-    }
-
-    private void CreateWorldLabel(Transform parent, string text, Color color)
-    {
-        GameObject labelObject = new GameObject("Label");
-        labelObject.transform.SetParent(parent);
-        labelObject.transform.localPosition = new Vector3(0f, 0f, -0.1f);
-        labelObject.transform.localScale = Vector3.one * 0.08f;
-
-        TextMesh textMesh = labelObject.AddComponent<TextMesh>();
-        textMesh.text = text;
-        textMesh.anchor = TextAnchor.MiddleCenter;
-        textMesh.alignment = TextAlignment.Center;
-        textMesh.fontSize = 48;
-        textMesh.color = color;
-
-        MeshRenderer meshRenderer = labelObject.GetComponent<MeshRenderer>();
-        meshRenderer.sortingOrder = 40;
-    }
-
     private void SetPlacementPreviewVisible(bool visible)
     {
         if (placementPreviewObject != null && placementPreviewObject.activeSelf != visible)
@@ -1295,39 +1196,11 @@ public class GameBootstrap : MonoBehaviour
 
     private void SetPlacementPreviewColor(bool canBuild)
     {
-        SpriteRenderer spriteRenderer = placementPreviewObject.GetComponent<SpriteRenderer>();
-
-        spriteRenderer.color = canBuild
+        presentation.SetCircleColor(
+            placementPreviewObject,
+            canBuild
             ? new Color(0.2f, 1f, 0.35f, 0.45f)
-            : new Color(1f, 0.2f, 0.2f, 0.45f);
-    }
-
-    private Sprite CreateCircleSprite(int size)
-    {
-        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        texture.filterMode = FilterMode.Bilinear;
-
-        Vector2 center = new Vector2(size / 2f, size / 2f);
-        float radius = size / 2f - 1f;
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                float distance = Vector2.Distance(new Vector2(x, y), center);
-                float alpha = distance <= radius ? 1f : 0f;
-
-                texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-            }
-        }
-
-        texture.Apply();
-
-        return Sprite.Create(
-            texture,
-            new Rect(0, 0, size, size),
-            new Vector2(0.5f, 0.5f),
-            size
+            : new Color(1f, 0.2f, 0.2f, 0.45f)
         );
     }
 
