@@ -59,10 +59,24 @@ public sealed class RuntimeSystemsTests
     {
         EntityPresentationFactory presentation = new EntityPresentationFactory(16);
         GameObject root = new GameObject("PresentationRoot");
+        PresentationPrefabCatalog catalog = Resources.Load<PresentationPrefabCatalog>(
+            "PresentationPrefabCatalog"
+        );
 
         try
         {
+            Assert.IsTrue(presentation.UsesPrefabCatalog);
+            Assert.IsNotNull(catalog);
+            Assert.IsNotNull(catalog.PlayerBasePrefab);
+            Assert.IsNotNull(catalog.EnemyBasePrefab);
+            Assert.IsNotNull(catalog.FactoryPrefab);
+            Assert.IsNotNull(catalog.PlayerInfantryPrefab);
+            Assert.IsNotNull(catalog.EnemyInfantryPrefab);
+            Assert.IsNotNull(catalog.CircleOverlayPrefab);
+            Assert.IsNotNull(catalog.GridLinePrefab);
+
             GameObject circle = presentation.CreateLabeledCircle(
+                PresentationEntityKind.EnemyBase,
                 "TestEntity",
                 new Vector2(2f, 3f),
                 0.5f,

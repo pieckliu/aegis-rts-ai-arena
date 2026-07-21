@@ -1,5 +1,6 @@
 ﻿<Solution>
   <Project Path="AegisRts.Core.csproj" />
   <Project Path="AegisRts.EditorTests.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="AegisRts.PlayModeTests.csproj" />
 </Solution>

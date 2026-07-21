@@ -25,6 +25,10 @@ public sealed class GameBootstrapPlayModeTests
 
         Assert.IsNotNull(GameObject.Find("GridRoot"));
         Assert.IsNotNull(GameObject.Find("BuildingRoot"));
+        GameObject playerBase = GameObject.Find("Base");
+        Assert.IsNotNull(playerBase);
+        Assert.IsNotNull(playerBase.GetComponent<SpriteRenderer>()?.sprite);
+        Assert.AreEqual("基地", playerBase.GetComponentInChildren<TextMesh>()?.text);
 
         yield return null;
 

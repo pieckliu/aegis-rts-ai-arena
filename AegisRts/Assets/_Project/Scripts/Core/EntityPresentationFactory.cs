@@ -3,20 +3,18 @@ using UnityEngine;
 
 internal sealed class EntityPresentationFactory : IDisposable
 {
-    private readonly Texture2D circleTexture;
-    private readonly Sprite circleSprite;
-    private readonly Material gridLineMaterial;
+    private readonly PresentationPrefabCatalog catalog;
+    private readonly int fallbackTextureSize;
+    private Texture2D fallbackCircleTexture;
+    private Sprite fallbackCircleSprite;
+    private Material fallbackGridLineMaterial;
+
+    public bool UsesPrefabCatalog => catalog != null;
 
     public EntityPresentationFactory(int circleTextureSize = 128)
     {
-        circleTexture = CreateCircleTexture(Mathf.Max(8, circleTextureSize));
-        circleSprite = Sprite.Create(
-            circleTexture,
-            new Rect(0, 0, circleTexture.width, circleTexture.height),
-            new Vector2(0.5f, 0.5f),
-            circleTexture.width
-        );
-        gridLineMaterial = new Material(Shader.Find("Sprites/Default"));
+        fallbackTextureSize = Mathf.Max(8, circleTextureSize);
+        catalog = Resources.Load<PresentationPrefabCatalog>("PresentationPrefabCatalog");
     }
 
     public GameObject CreateCircle(
@@ -28,19 +26,38 @@ internal sealed class EntityPresentationFactory : IDisposable
         Transform parent
     )
     {
-        GameObject circleObject = new GameObject(objectName);
-        circleObject.transform.SetParent(parent);
+        GameObject circleObject = catalog != null && catalog.CircleOverlayPrefab != null
+            ? UnityEngine.Object.Instantiate(catalog.CircleOverlayPrefab, parent)
+            : new GameObject(objectName);
+
+        if (circleObject.transform.parent != parent)
+        {
+            circleObject.transform.SetParent(parent);
+        }
+
+        circleObject.name = objectName;
         circleObject.transform.position = new Vector3(position.x, position.y, 0f);
         circleObject.transform.localScale = Vector3.one * radius * 2f;
 
-        SpriteRenderer spriteRenderer = circleObject.AddComponent<SpriteRenderer>();
-        spriteRenderer.sprite = circleSprite;
+        SpriteRenderer spriteRenderer = circleObject.GetComponent<SpriteRenderer>();
+
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = circleObject.AddComponent<SpriteRenderer>();
+        }
+
+        if (spriteRenderer.sprite == null)
+        {
+            spriteRenderer.sprite = GetFallbackCircleSprite();
+        }
+
         spriteRenderer.color = color;
         spriteRenderer.sortingOrder = sortingOrder;
         return circleObject;
     }
 
     public GameObject CreateLabeledCircle(
+        PresentationEntityKind entityKind,
         string objectName,
         Vector2 position,
         float radius,
@@ -51,25 +68,64 @@ internal sealed class EntityPresentationFactory : IDisposable
         Color labelColor
     )
     {
-        GameObject circleObject = CreateCircle(
-            objectName,
-            position,
-            radius,
-            color,
-            sortingOrder,
-            parent
-        );
-        CreateWorldLabel(circleObject.transform, label, labelColor);
+        GameObject template = GetEntityPrefab(entityKind);
+        GameObject circleObject = template != null
+            ? UnityEngine.Object.Instantiate(template, parent)
+            : CreateCircle(objectName, position, radius, color, sortingOrder, parent);
+
+        circleObject.name = objectName;
+        circleObject.transform.position = new Vector3(position.x, position.y, 0f);
+        circleObject.transform.localScale = Vector3.one * radius * 2f;
+        SpriteRenderer spriteRenderer = circleObject.GetComponent<SpriteRenderer>();
+
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = circleObject.AddComponent<SpriteRenderer>();
+        }
+
+        if (spriteRenderer.sprite == null)
+        {
+            spriteRenderer.sprite = GetFallbackCircleSprite();
+        }
+
+        spriteRenderer.color = color;
+        spriteRenderer.sortingOrder = sortingOrder;
+
+        TextMesh textMesh = circleObject.GetComponentInChildren<TextMesh>();
+
+        if (textMesh == null)
+        {
+            textMesh = CreateWorldLabel(circleObject.transform);
+        }
+
+        textMesh.text = label;
+        textMesh.color = labelColor;
         return circleObject;
     }
 
     public void CreateGridLine(Vector3 start, Vector3 end, Transform parent)
     {
-        GameObject lineObject = new GameObject("GridLine");
-        lineObject.transform.SetParent(parent);
+        GameObject lineObject = catalog != null && catalog.GridLinePrefab != null
+            ? UnityEngine.Object.Instantiate(catalog.GridLinePrefab, parent)
+            : new GameObject("GridLine");
 
-        LineRenderer lineRenderer = lineObject.AddComponent<LineRenderer>();
-        lineRenderer.sharedMaterial = gridLineMaterial;
+        if (lineObject.transform.parent != parent)
+        {
+            lineObject.transform.SetParent(parent);
+        }
+
+        lineObject.name = "GridLine";
+        LineRenderer lineRenderer = lineObject.GetComponent<LineRenderer>();
+
+        if (lineRenderer == null)
+        {
+            lineRenderer = lineObject.AddComponent<LineRenderer>();
+        }
+
+        if (lineRenderer.sharedMaterial == null)
+        {
+            lineRenderer.sharedMaterial = GetFallbackGridLineMaterial();
+        }
         lineRenderer.positionCount = 2;
         lineRenderer.SetPosition(0, start);
         lineRenderer.SetPosition(1, end);
@@ -91,12 +147,36 @@ internal sealed class EntityPresentationFactory : IDisposable
 
     public void Dispose()
     {
-        Release(circleSprite);
-        Release(circleTexture);
-        Release(gridLineMaterial);
+        Release(fallbackCircleSprite);
+        Release(fallbackCircleTexture);
+        Release(fallbackGridLineMaterial);
     }
 
-    private static void CreateWorldLabel(Transform parent, string text, Color color)
+    private GameObject GetEntityPrefab(PresentationEntityKind entityKind)
+    {
+        if (catalog == null)
+        {
+            return null;
+        }
+
+        switch (entityKind)
+        {
+            case PresentationEntityKind.PlayerBase:
+                return catalog.PlayerBasePrefab;
+            case PresentationEntityKind.EnemyBase:
+                return catalog.EnemyBasePrefab;
+            case PresentationEntityKind.Factory:
+                return catalog.FactoryPrefab;
+            case PresentationEntityKind.PlayerInfantry:
+                return catalog.PlayerInfantryPrefab;
+            case PresentationEntityKind.EnemyInfantry:
+                return catalog.EnemyInfantryPrefab;
+            default:
+                return null;
+        }
+    }
+
+    private static TextMesh CreateWorldLabel(Transform parent)
     {
         GameObject labelObject = new GameObject("Label");
         labelObject.transform.SetParent(parent);
@@ -104,14 +184,40 @@ internal sealed class EntityPresentationFactory : IDisposable
         labelObject.transform.localScale = Vector3.one * 0.08f;
 
         TextMesh textMesh = labelObject.AddComponent<TextMesh>();
-        textMesh.text = text;
         textMesh.anchor = TextAnchor.MiddleCenter;
         textMesh.alignment = TextAlignment.Center;
         textMesh.fontSize = 48;
-        textMesh.color = color;
 
         MeshRenderer meshRenderer = labelObject.GetComponent<MeshRenderer>();
         meshRenderer.sortingOrder = 40;
+        return textMesh;
+    }
+
+    private Sprite GetFallbackCircleSprite()
+    {
+        if (fallbackCircleSprite != null)
+        {
+            return fallbackCircleSprite;
+        }
+
+        fallbackCircleTexture = CreateCircleTexture(fallbackTextureSize);
+        fallbackCircleSprite = Sprite.Create(
+            fallbackCircleTexture,
+            new Rect(0, 0, fallbackCircleTexture.width, fallbackCircleTexture.height),
+            new Vector2(0.5f, 0.5f),
+            fallbackCircleTexture.width
+        );
+        return fallbackCircleSprite;
+    }
+
+    private Material GetFallbackGridLineMaterial()
+    {
+        if (fallbackGridLineMaterial == null)
+        {
+            fallbackGridLineMaterial = new Material(Shader.Find("Sprites/Default"));
+        }
+
+        return fallbackGridLineMaterial;
     }
 
     private static Texture2D CreateCircleTexture(int size)

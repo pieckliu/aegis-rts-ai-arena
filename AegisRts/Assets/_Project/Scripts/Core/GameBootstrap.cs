@@ -396,6 +396,7 @@ public class GameBootstrap : MonoBehaviour
         gridMap.TryOccupy(baseCell);
 
         baseObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.PlayerBase,
             "Base",
             basePosition,
             baseRadius,
@@ -437,6 +438,7 @@ public class GameBootstrap : MonoBehaviour
         gridMap.TryOccupy(enemyBaseCell);
 
         GameObject enemyBaseObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.EnemyBase,
             "EnemyBase",
             enemyBasePosition,
             baseRadius,
@@ -893,6 +895,7 @@ public class GameBootstrap : MonoBehaviour
         Vector2 spawnPosition = gridMap.CellToWorld(spawnCell);
 
         GameObject enemyInfantryObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.EnemyInfantry,
             "EnemyInfantry",
             spawnPosition,
             infantryRadius,
@@ -1098,6 +1101,7 @@ public class GameBootstrap : MonoBehaviour
         }
 
         GameObject factoryObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.Factory,
             "Factory",
             position,
             buildingRadius,
@@ -1147,6 +1151,7 @@ public class GameBootstrap : MonoBehaviour
         Vector2 spawnPosition = gridMap.CellToWorld(spawnCell);
 
         GameObject infantryObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.PlayerInfantry,
             "Infantry",
             spawnPosition,
             infantryRadius,
