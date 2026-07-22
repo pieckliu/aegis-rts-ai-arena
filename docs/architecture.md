@@ -9,7 +9,8 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `BuildingPlacementSystem` validates and atomically reserves paid building placements.
 - `UnitMovementSystem` owns formation-cell assignment, path requests, movement updates, and combat pursuit movement.
 - `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
-- `EntityPresentationFactory` owns runtime grid lines, circle sprites, world labels, and presentation resource cleanup.
+- `EntityPresentationFactory` instantiates prefab-backed entity views, grid lines, overlays, and safe runtime fallbacks.
+- `PresentationPrefabCatalog` is the Resources-loaded source of player/enemy building, infantry, overlay, and grid-line prefabs.
 - `GameDomain` owns shared team, entity-type, building, and unit runtime models.
 - `RtsCameraController` owns camera setup, movement, zoom, and map bounds.
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
@@ -29,6 +30,8 @@ The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. `G
 
 The initial runtime extraction is complete. `GameBootstrap` now coordinates match state, domain registration, and the extracted systems instead of implementing each subsystem internally.
 
-The next presentation step is to replace the factory's generated circles and labels with prefab-backed unit and building views. Enemy strategy can evolve behind `EnemyAISystem` without changing the Arena contract.
+Presentation assets live under `Assets/_Project/Prefabs/Presentation`. They can be regenerated through `Aegis RTS > Generate Presentation Prefabs`; the generator also maintains the shared circle Sprite, grid material, and `PresentationPrefabCatalog` asset.
+
+The next presentation step is to replace the placeholder circle Sprite inside those prefabs with authored unit and building art. Enemy strategy can evolve behind `EnemyAISystem` without changing the Arena contract.
 
 Each extraction should retain the existing Arena contract and add Edit Mode or Play Mode coverage before behavior changes are introduced.

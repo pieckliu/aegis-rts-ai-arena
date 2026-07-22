@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba45d1e33f34497ca97c4dfd586f5ccb, type: 3}
+  m_Name: PresentationPrefabCatalog
+  m_EditorClassIdentifier: AegisRts.Core::PresentationPrefabCatalog
+  PlayerBasePrefab: {fileID: 2132698591589909063, guid: 444eb6b0ce358dc45b7197312f6e867e, type: 3}
+  EnemyBasePrefab: {fileID: 8284313416243640227, guid: 07d4e346bf8e3a2468d97c69c448d4a5, type: 3}
+  FactoryPrefab: {fileID: 6682374911269113960, guid: 95ab6bbc64f2f4742a43bc7acce58234, type: 3}
+  PlayerInfantryPrefab: {fileID: 7824055032677153008, guid: edc728b4685af934f8cfaf5b47656428, type: 3}
+  EnemyInfantryPrefab: {fileID: 7657542251164607040, guid: 07d4d5b51e7e3754c9fe9f68b32e7f41, type: 3}
+  CircleOverlayPrefab: {fileID: 8122957500932493021, guid: ee4d1f87b30c9474a8865924a4df7b08, type: 3}
+  GridLinePrefab: {fileID: 1785121510664962612, guid: 7ec883ad57217e04d89fe0c0000ddb19, type: 3}
