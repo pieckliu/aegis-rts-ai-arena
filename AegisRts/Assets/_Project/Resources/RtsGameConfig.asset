@@ -42,5 +42,8 @@ MonoBehaviour:
   CameraMoveSpeed: 14
   CameraZoomSpeed: 3
   MinCameraSize: 6
+  InitialCameraSize: 9
   MaxCameraSize: 18
   DragSelectThreshold: 10
+  BuildingSightRange: 7
+  UnitSightRange: 5

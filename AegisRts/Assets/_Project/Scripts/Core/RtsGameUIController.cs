@@ -14,7 +14,16 @@ internal sealed class RtsGameUIController
         public Image FillImage;
     }
 
+    private sealed class MinimapMarker
+    {
+        public GameObject Root;
+        public RectTransform Rect;
+        public Image Image;
+    }
+
     private readonly Font font;
+    private readonly Texture2D minimapDotTexture;
+    private readonly Sprite minimapDotSprite;
     private readonly GameObject canvasObject;
     private readonly Canvas canvas;
     private readonly GameObject menuPanel;
@@ -32,7 +41,11 @@ internal sealed class RtsGameUIController
     private readonly GameObject notificationPanel;
     private readonly Text notificationText;
     private readonly RectTransform selectionRect;
+    private readonly RectTransform minimapContent;
+    private readonly RawImage minimapFog;
+    private readonly RectTransform minimapViewport;
     private readonly Dictionary<object, HealthView> healthViews = new Dictionary<object, HealthView>();
+    private readonly Dictionary<object, MinimapMarker> minimapMarkers = new Dictionary<object, MinimapMarker>();
     private float notificationTimer;
 
     public RtsGameUIController(
@@ -42,10 +55,19 @@ internal sealed class RtsGameUIController
         Action trainInfantry,
         Action resume,
         Action restart,
-        Action returnToMenu
+        Action returnToMenu,
+        Action<Vector2> navigateMinimap
     )
     {
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        minimapDotTexture = CreateCircleTexture(32);
+        minimapDotSprite = Sprite.Create(
+            minimapDotTexture,
+            new Rect(0f, 0f, minimapDotTexture.width, minimapDotTexture.height),
+            new Vector2(0.5f, 0.5f),
+            minimapDotTexture.width
+        );
+        minimapDotSprite.name = "MinimapDot";
         EnsureEventSystem();
 
         canvasObject = new GameObject("RtsGameUI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -117,6 +139,53 @@ internal sealed class RtsGameUIController
         notificationText.raycastTarget = false;
         notificationPanel.SetActive(false);
 
+        GameObject minimapPanel = CreatePanel(
+            "Minimap",
+            hudPanel.transform,
+            new Vector2(0.02f, 0.035f),
+            new Vector2(0.205f, 0.365f),
+            new Color(0.015f, 0.025f, 0.04f, 0.96f)
+        );
+        CreateText(
+            "MinimapTitle",
+            minimapPanel.transform,
+            "TACTICAL MAP  ·  M OVERVIEW",
+            15,
+            TextAnchor.MiddleCenter,
+            new Vector2(0.03f, 0.91f),
+            new Vector2(0.97f, 0.99f)
+        ).raycastTarget = false;
+        GameObject minimapMap = CreatePanel(
+            "MinimapContent",
+            minimapPanel.transform,
+            new Vector2(0.055f, 0.07f),
+            new Vector2(0.945f, 0.88f),
+            new Color(0.035f, 0.055f, 0.075f, 1f)
+        );
+        minimapContent = minimapMap.GetComponent<RectTransform>();
+        MinimapPointerHandler pointerHandler = minimapMap.AddComponent<MinimapPointerHandler>();
+        pointerHandler.Configure(minimapContent, navigateMinimap);
+
+        GameObject fogObject = new GameObject("MinimapFog", typeof(RectTransform), typeof(RawImage));
+        fogObject.transform.SetParent(minimapContent, false);
+        RectTransform fogRect = fogObject.GetComponent<RectTransform>();
+        fogRect.anchorMin = Vector2.zero;
+        fogRect.anchorMax = Vector2.one;
+        fogRect.offsetMin = Vector2.zero;
+        fogRect.offsetMax = Vector2.zero;
+        minimapFog = fogObject.GetComponent<RawImage>();
+        minimapFog.raycastTarget = false;
+
+        GameObject viewport = CreatePanel(
+            "MinimapViewport",
+            minimapContent,
+            Vector2.zero,
+            Vector2.one,
+            new Color(0.3f, 0.85f, 1f, 0.18f)
+        );
+        viewport.GetComponent<Image>().raycastTarget = false;
+        minimapViewport = viewport.GetComponent<RectTransform>();
+
         GameObject selection = CreatePanel("SelectionRectangle", hudPanel.transform, Vector2.zero, Vector2.zero, new Color(0.15f, 0.7f, 1f, 0.2f));
         selectionRect = selection.GetComponent<RectTransform>();
         selectionRect.anchorMin = Vector2.zero;
@@ -179,7 +248,10 @@ internal sealed class RtsGameUIController
         RtsSelectionInputController selectionInput,
         IList<BuildingData> buildings,
         IList<UnitData> units,
-        Camera camera
+        Camera camera,
+        float mapHalfSize,
+        Func<Vector2, bool> isWorldVisible,
+        Texture fogTexture
     )
     {
         bool playing = state == GameState.Playing;
@@ -193,7 +265,7 @@ internal sealed class RtsGameUIController
             return;
         }
 
-        resourceText.text = $"资源：{resources}    兵厂：{factoryCost}    步兵：{infantryCost}    WASD 移动 / 滚轮缩放 / Esc 暂停";
+        resourceText.text = $"资源：{resources}    兵厂：{factoryCost}    步兵：{infantryCost}    WASD 移动 / 滚轮缩放 / M 战略视角 / Esc 暂停";
         cancelBuildButton.gameObject.SetActive(buildMode != BuildingType.None);
         bool factorySelected = selectedBuilding != null && selectedBuilding.Type == BuildingType.Factory;
         trainButton.interactable = factorySelected;
@@ -252,13 +324,175 @@ internal sealed class RtsGameUIController
         overlayPanel.SetActive(paused || won || lost);
         overlayTitle.text = won ? "胜利" : lost ? "失败" : "游戏已暂停";
         UpdateSelectionRectangle(selectionInput);
-        UpdateHealthViews(buildings, units, selectedBuilding, camera);
+        UpdateHealthViews(
+            buildings,
+            units,
+            selectedBuilding,
+            selectedUnits,
+            camera,
+            isWorldVisible
+        );
+        UpdateMinimap(buildings, units, camera, mapHalfSize, isWorldVisible, fogTexture);
     }
 
     public void Destroy()
     {
         ClearHealthViews();
+        ClearMinimapMarkers();
         UnityEngine.Object.Destroy(canvasObject);
+        Release(minimapDotSprite);
+        Release(minimapDotTexture);
+    }
+
+    private void UpdateMinimap(
+        IList<BuildingData> buildings,
+        IList<UnitData> units,
+        Camera camera,
+        float mapHalfSize,
+        Func<Vector2, bool> isWorldVisible,
+        Texture fogTexture
+    )
+    {
+        minimapFog.texture = fogTexture;
+        HashSet<object> visibleMarkers = new HashSet<object>();
+
+        foreach (BuildingData building in buildings)
+        {
+            if (building == null ||
+                (building.Team == Team.Enemy &&
+                 (isWorldVisible == null || !isWorldVisible(building.Position))))
+            {
+                continue;
+            }
+
+            Color color = building.Team == Team.Enemy
+                ? new Color(1f, 0.22f, 0.2f, 1f)
+                : building.Type == BuildingType.Factory
+                    ? new Color(0.2f, 0.95f, 0.4f, 1f)
+                    : new Color(0.25f, 0.6f, 1f, 1f);
+            UpdateMinimapMarker(
+                building,
+                building.Position,
+                color,
+                building.Type == BuildingType.Base ? 11f : 8f,
+                mapHalfSize,
+                visibleMarkers
+            );
+        }
+
+        foreach (UnitData unit in units)
+        {
+            if (unit == null ||
+                (unit.Team == Team.Enemy &&
+                 (isWorldVisible == null || !isWorldVisible(unit.Position))))
+            {
+                continue;
+            }
+
+            Color color = unit.Team == Team.Enemy
+                ? new Color(1f, 0.55f, 0.12f, 1f)
+                : new Color(1f, 0.92f, 0.2f, 1f);
+            UpdateMinimapMarker(unit, unit.Position, color, 6f, mapHalfSize, visibleMarkers);
+        }
+
+        List<object> stale = new List<object>();
+
+        foreach (object key in minimapMarkers.Keys)
+        {
+            if (!visibleMarkers.Contains(key))
+            {
+                stale.Add(key);
+            }
+        }
+
+        foreach (object key in stale)
+        {
+            UnityEngine.Object.Destroy(minimapMarkers[key].Root);
+            minimapMarkers.Remove(key);
+        }
+
+        UpdateMinimapViewport(camera, mapHalfSize);
+        minimapViewport.SetAsLastSibling();
+    }
+
+    private void UpdateMinimapMarker(
+        object key,
+        Vector2 worldPosition,
+        Color color,
+        float size,
+        float mapHalfSize,
+        ISet<object> visibleMarkers
+    )
+    {
+        visibleMarkers.Add(key);
+
+        if (!minimapMarkers.TryGetValue(key, out MinimapMarker marker))
+        {
+            GameObject root = CreatePanel(
+                "MapDot",
+                minimapContent,
+                Vector2.zero,
+                Vector2.zero,
+                color
+            );
+            marker = new MinimapMarker
+            {
+                Root = root,
+                Rect = root.GetComponent<RectTransform>(),
+                Image = root.GetComponent<Image>()
+            };
+            marker.Image.raycastTarget = false;
+            marker.Image.sprite = minimapDotSprite;
+            marker.Image.preserveAspect = true;
+            marker.Rect.pivot = new Vector2(0.5f, 0.5f);
+            minimapMarkers[key] = marker;
+        }
+
+        float mapSize = Mathf.Max(0.001f, mapHalfSize * 2f);
+        Vector2 normalized = new Vector2(
+            Mathf.Clamp01((worldPosition.x + mapHalfSize) / mapSize),
+            Mathf.Clamp01((worldPosition.y + mapHalfSize) / mapSize)
+        );
+        marker.Rect.anchorMin = normalized;
+        marker.Rect.anchorMax = normalized;
+        marker.Rect.anchoredPosition = Vector2.zero;
+        marker.Rect.sizeDelta = Vector2.one * size;
+        marker.Image.color = color;
+    }
+
+    private void UpdateMinimapViewport(Camera camera, float mapHalfSize)
+    {
+        if (camera == null || mapHalfSize <= 0f)
+        {
+            minimapViewport.gameObject.SetActive(false);
+            return;
+        }
+
+        minimapViewport.gameObject.SetActive(true);
+        float mapSize = mapHalfSize * 2f;
+        float vertical = camera.orthographicSize;
+        float horizontal = vertical * camera.aspect;
+        Vector2 cameraPosition = camera.transform.position;
+        minimapViewport.anchorMin = new Vector2(
+            Mathf.Clamp01((cameraPosition.x - horizontal + mapHalfSize) / mapSize),
+            Mathf.Clamp01((cameraPosition.y - vertical + mapHalfSize) / mapSize)
+        );
+        minimapViewport.anchorMax = new Vector2(
+            Mathf.Clamp01((cameraPosition.x + horizontal + mapHalfSize) / mapSize),
+            Mathf.Clamp01((cameraPosition.y + vertical + mapHalfSize) / mapSize)
+        );
+        minimapViewport.offsetMin = Vector2.zero;
+        minimapViewport.offsetMax = Vector2.zero;
+    }
+
+    private void ClearMinimapMarkers()
+    {
+        foreach (MinimapMarker marker in minimapMarkers.Values)
+        {
+            UnityEngine.Object.Destroy(marker.Root);
+        }
+
+        minimapMarkers.Clear();
     }
 
     private void UpdateSelectionRectangle(RtsSelectionInputController input)
@@ -280,13 +514,21 @@ internal sealed class RtsGameUIController
         IList<BuildingData> buildings,
         IList<UnitData> units,
         BuildingData selectedBuilding,
-        Camera camera
+        IList<UnitData> selectedUnits,
+        Camera camera,
+        Func<Vector2, bool> isWorldVisible
     )
     {
         HashSet<object> visible = new HashSet<object>();
 
         foreach (BuildingData building in buildings)
         {
+            if (building.Team == Team.Enemy &&
+                (isWorldVisible == null || !isWorldVisible(building.Position)))
+            {
+                continue;
+            }
+
             bool isTargeted = false;
 
             foreach (UnitData unit in units)
@@ -314,7 +556,37 @@ internal sealed class RtsGameUIController
 
         foreach (UnitData unit in units)
         {
-            UpdateHealthView(unit, unit.Position, unit.Radius, unit.HitPoints, unit.MaxHitPoints, camera, visible);
+            if (unit.Team == Team.Enemy &&
+                (isWorldVisible == null || !isWorldVisible(unit.Position)))
+            {
+                continue;
+            }
+
+            bool isTargeted = false;
+
+            foreach (UnitData other in units)
+            {
+                if (other.AttackUnitTarget == unit)
+                {
+                    isTargeted = true;
+                    break;
+                }
+            }
+
+            if (selectedUnits.Contains(unit) ||
+                unit.HitPoints < unit.MaxHitPoints ||
+                isTargeted)
+            {
+                UpdateHealthView(
+                    unit,
+                    unit.Position,
+                    unit.Radius,
+                    unit.HitPoints,
+                    unit.MaxHitPoints,
+                    camera,
+                    visible
+                );
+            }
         }
 
         List<object> stale = new List<object>();
@@ -452,6 +724,48 @@ internal sealed class RtsGameUIController
         if (EventSystem.current == null)
         {
             new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        }
+    }
+
+    private static Texture2D CreateCircleTexture(int size)
+    {
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "MinimapDotTexture",
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+        float radius = size * 0.46f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float distance = Vector2.Distance(new Vector2(x, y), center);
+                float alpha = Mathf.Clamp01(radius + 1f - distance);
+                texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        }
+
+        texture.Apply(false);
+        return texture;
+    }
+
+    private static void Release(UnityEngine.Object value)
+    {
+        if (value == null)
+        {
+            return;
+        }
+
+        if (Application.isPlaying)
+        {
+            UnityEngine.Object.Destroy(value);
+        }
+        else
+        {
+            UnityEngine.Object.DestroyImmediate(value);
         }
     }
 }

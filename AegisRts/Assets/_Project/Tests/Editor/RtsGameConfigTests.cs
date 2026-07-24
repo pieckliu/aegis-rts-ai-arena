@@ -44,4 +44,15 @@ public sealed class RtsGameConfigTests
 
         Object.DestroyImmediate(config);
     }
+
+    [Test]
+    public void Configuration_RejectsInitialCameraOutsideRange()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.InitialCameraSize = config.MaxCameraSize + 1f;
+
+        Assert.IsFalse(config.IsValid());
+
+        Object.DestroyImmediate(config);
+    }
 }
