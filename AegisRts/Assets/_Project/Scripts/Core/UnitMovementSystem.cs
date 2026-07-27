@@ -4,6 +4,18 @@ using UnityEngine;
 internal sealed class UnitMovementSystem
 {
     private const int FormationSearchRadius = 6;
+    private static readonly Vector2[] ClearanceDirections =
+    {
+        Vector2.zero,
+        Vector2.right,
+        Vector2.left,
+        Vector2.up,
+        Vector2.down,
+        new Vector2(0.7071f, 0.7071f),
+        new Vector2(-0.7071f, 0.7071f),
+        new Vector2(0.7071f, -0.7071f),
+        new Vector2(-0.7071f, -0.7071f)
+    };
 
     private readonly RtsGameConfig config;
     private readonly GridMapService gridMap;
@@ -21,6 +33,15 @@ internal sealed class UnitMovementSystem
     }
 
     public int CommandGroupMove(IList<UnitData> actors, Vector2Int centerCell)
+    {
+        return CommandGroupMove(actors, centerCell, gridMap.CellToWorld(centerCell));
+    }
+
+    public int CommandGroupMove(
+        IList<UnitData> actors,
+        Vector2Int centerCell,
+        Vector2 centerWorldPosition
+    )
     {
         List<UnitData> movableUnits = new List<UnitData>();
         HashSet<Vector2Int> actorCells = new HashSet<Vector2Int>();
@@ -53,10 +74,19 @@ internal sealed class UnitMovementSystem
         }
 
         HashSet<Vector2Int> blockedCells = new HashSet<Vector2Int>(gridMap.OccupiedCells);
+        HashSet<Vector2Int> obstacleCells = new HashSet<Vector2Int>(blockedCells);
 
         foreach (Vector2Int actorCell in actorCells)
         {
             blockedCells.Remove(actorCell);
+        }
+
+        foreach (UnitData unit in units)
+        {
+            if (unit != null)
+            {
+                obstacleCells.Remove(unit.Cell);
+            }
         }
 
         foreach (UnitData unit in movableUnits)
@@ -64,6 +94,8 @@ internal sealed class UnitMovementSystem
             gridMap.Release(unit.Cell);
         }
 
+        Vector2 formationOffset = ClampTargetPosition(centerWorldPosition) -
+            gridMap.CellToWorld(centerCell);
         int commandedCount = Mathf.Min(movableUnits.Count, targetCells.Count);
         int acceptedCount = 0;
 
@@ -71,15 +103,31 @@ internal sealed class UnitMovementSystem
         {
             UnitData unit = movableUnits[i];
             Vector2Int targetCell = targetCells[i];
-            List<Vector2Int> path = GridPathfinder.FindPath(
-                unit.Cell,
-                targetCell,
-                gridMap.MapSize,
-                gridMap.MapSize,
-                blockedCells
+            Vector2 targetPosition = ClampTargetPosition(
+                gridMap.CellToWorld(targetCell) + formationOffset
             );
 
-            if (path.Count == 0 || !gridMap.TryOccupy(targetCell))
+            if (!IsPositionClear(targetPosition, obstacleCells))
+            {
+                targetPosition = gridMap.CellToWorld(targetCell);
+            }
+
+            bool canMoveDirectly = IsDirectPathClear(
+                unit.Position,
+                targetPosition,
+                obstacleCells
+            );
+            List<Vector2Int> path = canMoveDirectly
+                ? null
+                : GridPathfinder.FindPath(
+                    unit.Cell,
+                    targetCell,
+                    gridMap.MapSize,
+                    gridMap.MapSize,
+                    blockedCells
+                );
+
+            if ((!canMoveDirectly && path.Count == 0) || !gridMap.TryOccupy(targetCell))
             {
                 gridMap.TryOccupy(unit.Cell);
                 unit.IsMoving = false;
@@ -90,12 +138,24 @@ internal sealed class UnitMovementSystem
             unit.AttackUnitTarget = null;
             unit.Cell = targetCell;
             unit.TargetCell = targetCell;
-            unit.TargetPosition = gridMap.CellToWorld(targetCell);
+            unit.TargetPosition = targetPosition;
             unit.Waypoints.Clear();
 
-            for (int pathIndex = 1; pathIndex < path.Count; pathIndex++)
+            if (canMoveDirectly)
             {
-                unit.Waypoints.Add(gridMap.CellToWorld(path[pathIndex]));
+                AddWaypointIfDistinct(unit, targetPosition);
+            }
+            else
+            {
+                for (int pathIndex = 1; pathIndex < path.Count; pathIndex++)
+                {
+                    Vector2 waypoint = pathIndex == path.Count - 1
+                        ? targetPosition
+                        : gridMap.CellToWorld(path[pathIndex]);
+                    AddWaypointIfDistinct(unit, waypoint);
+                }
+
+                AddWaypointIfDistinct(unit, targetPosition);
             }
 
             unit.IsMoving = unit.Waypoints.Count > 0;
@@ -104,6 +164,79 @@ internal sealed class UnitMovementSystem
         }
 
         return acceptedCount;
+    }
+
+    private Vector2 ClampTargetPosition(Vector2 position)
+    {
+        float margin = Mathf.Min(config.InfantryRadius, gridMap.HalfSize);
+        return new Vector2(
+            Mathf.Clamp(position.x, -gridMap.HalfSize + margin, gridMap.HalfSize - margin),
+            Mathf.Clamp(position.y, -gridMap.HalfSize + margin, gridMap.HalfSize - margin)
+        );
+    }
+
+    private bool IsDirectPathClear(
+        Vector2 start,
+        Vector2 end,
+        ISet<Vector2Int> obstacleCells
+    )
+    {
+        if (obstacleCells == null || obstacleCells.Count == 0)
+        {
+            return true;
+        }
+
+        float distance = Vector2.Distance(start, end);
+        int sampleCount = Mathf.Max(
+            1,
+            Mathf.CeilToInt(distance / Mathf.Max(0.05f, gridMap.CellSize * 0.2f))
+        );
+
+        for (int sample = 0; sample <= sampleCount; sample++)
+        {
+            Vector2 point = Vector2.Lerp(start, end, sample / (float)sampleCount);
+
+            if (!IsPositionClear(point, obstacleCells))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsPositionClear(Vector2 position, ISet<Vector2Int> obstacleCells)
+    {
+        if (obstacleCells == null || obstacleCells.Count == 0)
+        {
+            return true;
+        }
+
+        float clearance = config.InfantryRadius * 0.9f;
+
+        foreach (Vector2 direction in ClearanceDirections)
+        {
+            if (obstacleCells.Contains(
+                gridMap.WorldToCell(position + direction * clearance)
+            ))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void AddWaypointIfDistinct(UnitData unit, Vector2 waypoint)
+    {
+        Vector2 previous = unit.Waypoints.Count > 0
+            ? unit.Waypoints[unit.Waypoints.Count - 1]
+            : unit.Position;
+
+        if (Vector2.Distance(previous, waypoint) > 0.01f)
+        {
+            unit.Waypoints.Add(waypoint);
+        }
     }
 
     public List<Vector2Int> FindFormationCells(
