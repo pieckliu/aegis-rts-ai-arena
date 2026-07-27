@@ -42,8 +42,10 @@ MonoBehaviour:
   CameraMoveSpeed: 14
   CameraZoomSpeed: 3
   MinCameraSize: 6
-  InitialCameraSize: 9
+  InitialCameraSize: 6
   MaxCameraSize: 18
+  InitialCameraInwardBias: 0.25
   DragSelectThreshold: 10
   BuildingSightRange: 7
   UnitSightRange: 5
+  EnemyLastKnownDuration: 8

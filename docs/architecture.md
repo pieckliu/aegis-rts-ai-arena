@@ -15,7 +15,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsAudioFeedbackSystem` plays catalog-backed attack, impact, and production-complete clips without affecting simulation state.
 - `GameDomain` owns shared team, entity-type, building, and unit runtime models.
 - `RtsCameraController` owns camera setup, movement, zoom, map bounds, minimap navigation, and strategic-overview switching.
-- `RtsVisibilitySystem` owns current visibility, persistent exploration, the world fog texture, and enemy presentation visibility.
+- `RtsVisibilitySystem` owns current visibility, persistent exploration, the world fog texture, enemy presentation visibility, and non-leaking last-known enemy contact snapshots.
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
 - `RtsSelectionInputController` owns click, drag-selection, and command-input state.
 - `RtsEconomyProductionSystem` owns player resources, passive income, factory queues, and production timing.
@@ -40,7 +40,9 @@ Authored presentation assets remain under `Assets/_Project/Art`, `Assets/_Projec
 `Assets/_Project/Prefabs/Presentation` for possible later use. The active prototype deliberately
 renders gameplay entities as colored circles and does not create the runtime audio system. The
 minimap and world map share visibility state, preventing hidden enemy entities and health bars from
-leaking information.
+leaking information. Friendly minimap contacts update from live positions; hidden mobile enemy
+contacts remain frozen at their last observed position and expire after the configured memory
+duration, while discovered static enemy buildings remain as dim strategic intelligence.
 
 Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue, so the Arena observation and action contract stays unchanged.
 

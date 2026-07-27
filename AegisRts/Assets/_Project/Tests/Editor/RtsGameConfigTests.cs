@@ -55,4 +55,15 @@ public sealed class RtsGameConfigTests
 
         Object.DestroyImmediate(config);
     }
+
+    [Test]
+    public void Configuration_RejectsInvalidVisibilityMemory()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.EnemyLastKnownDuration = 0f;
+
+        Assert.IsFalse(config.IsValid());
+
+        Object.DestroyImmediate(config);
+    }
 }

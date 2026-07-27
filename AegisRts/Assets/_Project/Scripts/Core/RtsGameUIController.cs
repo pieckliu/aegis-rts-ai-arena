@@ -250,8 +250,7 @@ internal sealed class RtsGameUIController
         IList<UnitData> units,
         Camera camera,
         float mapHalfSize,
-        Func<Vector2, bool> isWorldVisible,
-        Texture fogTexture
+        RtsVisibilitySystem visibility
     )
     {
         bool playing = state == GameState.Playing;
@@ -324,6 +323,9 @@ internal sealed class RtsGameUIController
         overlayPanel.SetActive(paused || won || lost);
         overlayTitle.text = won ? "胜利" : lost ? "失败" : "游戏已暂停";
         UpdateSelectionRectangle(selectionInput);
+        Func<Vector2, bool> isWorldVisible = visibility == null
+            ? null
+            : new Func<Vector2, bool>(visibility.IsVisible);
         UpdateHealthViews(
             buildings,
             units,
@@ -332,7 +334,7 @@ internal sealed class RtsGameUIController
             camera,
             isWorldVisible
         );
-        UpdateMinimap(buildings, units, camera, mapHalfSize, isWorldVisible, fogTexture);
+        UpdateMinimap(buildings, units, camera, mapHalfSize, visibility);
     }
 
     public void Destroy()
@@ -349,20 +351,36 @@ internal sealed class RtsGameUIController
         IList<UnitData> units,
         Camera camera,
         float mapHalfSize,
-        Func<Vector2, bool> isWorldVisible,
-        Texture fogTexture
+        RtsVisibilitySystem visibility
     )
     {
-        minimapFog.texture = fogTexture;
+        minimapFog.texture = visibility?.FogTexture;
         HashSet<object> visibleMarkers = new HashSet<object>();
 
         foreach (BuildingData building in buildings)
         {
-            if (building == null ||
-                (building.Team == Team.Enemy &&
-                 (isWorldVisible == null || !isWorldVisible(building.Position))))
+            if (building == null)
             {
                 continue;
+            }
+
+            Vector2 markerPosition = building.Position;
+            bool lastKnown = false;
+
+            if (building.Team == Team.Enemy &&
+                (visibility == null || !visibility.IsVisible(building.Position)))
+            {
+                if (visibility == null ||
+                    !visibility.TryGetLastKnownContact(
+                        building,
+                        out markerPosition,
+                        out _
+                    ))
+                {
+                    continue;
+                }
+
+                lastKnown = true;
             }
 
             Color color = building.Team == Team.Enemy
@@ -370,29 +388,58 @@ internal sealed class RtsGameUIController
                 : building.Type == BuildingType.Factory
                     ? new Color(0.2f, 0.95f, 0.4f, 1f)
                     : new Color(0.25f, 0.6f, 1f, 1f);
+            color.a = lastKnown ? 0.48f : 1f;
             UpdateMinimapMarker(
                 building,
-                building.Position,
+                markerPosition,
                 color,
                 building.Type == BuildingType.Base ? 11f : 8f,
                 mapHalfSize,
-                visibleMarkers
+                visibleMarkers,
+                GetMarkerName(building, lastKnown)
             );
         }
 
         foreach (UnitData unit in units)
         {
-            if (unit == null ||
-                (unit.Team == Team.Enemy &&
-                 (isWorldVisible == null || !isWorldVisible(unit.Position))))
+            if (unit == null)
             {
                 continue;
+            }
+
+            Vector2 markerPosition = unit.Position;
+            float freshness = 1f;
+            bool lastKnown = false;
+
+            if (unit.Team == Team.Enemy &&
+                (visibility == null || !visibility.IsVisible(unit.Position)))
+            {
+                if (visibility == null ||
+                    !visibility.TryGetLastKnownContact(
+                        unit,
+                        out markerPosition,
+                        out freshness
+                    ))
+                {
+                    continue;
+                }
+
+                lastKnown = true;
             }
 
             Color color = unit.Team == Team.Enemy
                 ? new Color(1f, 0.55f, 0.12f, 1f)
                 : new Color(1f, 0.92f, 0.2f, 1f);
-            UpdateMinimapMarker(unit, unit.Position, color, 6f, mapHalfSize, visibleMarkers);
+            color.a = lastKnown ? Mathf.Lerp(0.16f, 0.62f, freshness) : 1f;
+            UpdateMinimapMarker(
+                unit,
+                markerPosition,
+                color,
+                6f,
+                mapHalfSize,
+                visibleMarkers,
+                GetMarkerName(unit, lastKnown)
+            );
         }
 
         List<object> stale = new List<object>();
@@ -421,7 +468,8 @@ internal sealed class RtsGameUIController
         Color color,
         float size,
         float mapHalfSize,
-        ISet<object> visibleMarkers
+        ISet<object> visibleMarkers,
+        string markerName
     )
     {
         visibleMarkers.Add(key);
@@ -429,7 +477,7 @@ internal sealed class RtsGameUIController
         if (!minimapMarkers.TryGetValue(key, out MinimapMarker marker))
         {
             GameObject root = CreatePanel(
-                "MapDot",
+                markerName,
                 minimapContent,
                 Vector2.zero,
                 Vector2.zero,
@@ -448,6 +496,7 @@ internal sealed class RtsGameUIController
             minimapMarkers[key] = marker;
         }
 
+        marker.Root.name = markerName;
         float mapSize = Mathf.Max(0.001f, mapHalfSize * 2f);
         Vector2 normalized = new Vector2(
             Mathf.Clamp01((worldPosition.x + mapHalfSize) / mapSize),
@@ -458,6 +507,28 @@ internal sealed class RtsGameUIController
         marker.Rect.anchoredPosition = Vector2.zero;
         marker.Rect.sizeDelta = Vector2.one * size;
         marker.Image.color = color;
+    }
+
+    private static string GetMarkerName(BuildingData building, bool lastKnown)
+    {
+        if (building.Team == Team.Player)
+        {
+            return building.Type == BuildingType.Base
+                ? "PlayerBaseMapDot"
+                : "PlayerFactoryMapDot";
+        }
+
+        return lastKnown ? "LastKnownEnemyBuildingMapDot" : "EnemyBuildingMapDot";
+    }
+
+    private static string GetMarkerName(UnitData unit, bool lastKnown)
+    {
+        if (unit.Team == Team.Player)
+        {
+            return "PlayerUnitMapDot";
+        }
+
+        return lastKnown ? "LastKnownEnemyUnitMapDot" : "EnemyUnitMapDot";
     }
 
     private void UpdateMinimapViewport(Camera camera, float mapHalfSize)

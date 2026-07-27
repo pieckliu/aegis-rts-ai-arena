@@ -3,6 +3,13 @@ using UnityEngine;
 
 internal sealed class RtsVisibilitySystem
 {
+    private sealed class EnemyContact
+    {
+        public Vector2 Position;
+        public float Age;
+        public bool Persistent;
+    }
+
     private static readonly Color UnexploredColor = new Color(0.015f, 0.02f, 0.03f, 0.96f);
     private static readonly Color ExploredColor = new Color(0.02f, 0.035f, 0.05f, 0.48f);
     private static readonly Color VisibleColor = new Color(0f, 0f, 0f, 0f);
@@ -12,6 +19,11 @@ internal sealed class RtsVisibilitySystem
     private readonly IList<UnitData> units;
     private readonly float buildingSightRange;
     private readonly float unitSightRange;
+    private readonly float enemyLastKnownDuration;
+    private readonly Dictionary<object, EnemyContact> enemyContacts =
+        new Dictionary<object, EnemyContact>();
+    private readonly HashSet<object> activeEnemies = new HashSet<object>();
+    private readonly List<object> staleContacts = new List<object>();
     private readonly bool[,] visibleCells;
     private readonly bool[,] exploredCells;
     private readonly Color[] fogPixels;
@@ -27,6 +39,7 @@ internal sealed class RtsVisibilitySystem
         IList<UnitData> unitList,
         float buildingSight,
         float unitSight,
+        float lastKnownDuration,
         Transform parent
     )
     {
@@ -35,6 +48,7 @@ internal sealed class RtsVisibilitySystem
         units = unitList;
         buildingSightRange = Mathf.Max(0.1f, buildingSight);
         unitSightRange = Mathf.Max(0.1f, unitSight);
+        enemyLastKnownDuration = Mathf.Max(0.1f, lastKnownDuration);
         visibleCells = new bool[gridMap.MapSize, gridMap.MapSize];
         exploredCells = new bool[gridMap.MapSize, gridMap.MapSize];
         fogPixels = new Color[gridMap.MapSize * gridMap.MapSize];
@@ -74,7 +88,7 @@ internal sealed class RtsVisibilitySystem
         renderer.sortingOrder = 80;
     }
 
-    public void Tick()
+    public void Tick(float deltaTime)
     {
         ClearVisibleCells();
 
@@ -95,6 +109,7 @@ internal sealed class RtsVisibilitySystem
         }
 
         UpdateFogTexture();
+        UpdateEnemyContacts(Mathf.Max(0f, deltaTime));
         UpdateEnemyPresentation();
     }
 
@@ -108,6 +123,26 @@ internal sealed class RtsVisibilitySystem
     {
         Vector2Int cell = gridMap.WorldToCell(worldPosition);
         return gridMap.IsCellInside(cell) && exploredCells[cell.x, cell.y];
+    }
+
+    public bool TryGetLastKnownContact(
+        object entity,
+        out Vector2 position,
+        out float freshness
+    )
+    {
+        if (entity != null && enemyContacts.TryGetValue(entity, out EnemyContact contact))
+        {
+            position = contact.Position;
+            freshness = contact.Persistent
+                ? 1f
+                : Mathf.Clamp01(1f - contact.Age / enemyLastKnownDuration);
+            return contact.Persistent || freshness > 0f;
+        }
+
+        position = default;
+        freshness = 0f;
+        return false;
     }
 
     public void Destroy()
@@ -197,6 +232,76 @@ internal sealed class RtsVisibilitySystem
             {
                 unit.GameObject.SetActive(IsVisible(unit.Position));
             }
+        }
+    }
+
+    private void UpdateEnemyContacts(float deltaTime)
+    {
+        activeEnemies.Clear();
+        staleContacts.Clear();
+
+        foreach (BuildingData building in buildings)
+        {
+            if (building == null || building.Team != Team.Enemy)
+            {
+                continue;
+            }
+
+            activeEnemies.Add(building);
+            UpdateEnemyContact(building, building.Position, true, deltaTime);
+        }
+
+        foreach (UnitData unit in units)
+        {
+            if (unit == null || unit.Team != Team.Enemy)
+            {
+                continue;
+            }
+
+            activeEnemies.Add(unit);
+            UpdateEnemyContact(unit, unit.Position, false, deltaTime);
+        }
+
+        foreach (KeyValuePair<object, EnemyContact> pair in enemyContacts)
+        {
+            if (!activeEnemies.Contains(pair.Key) ||
+                (!pair.Value.Persistent && pair.Value.Age >= enemyLastKnownDuration))
+            {
+                staleContacts.Add(pair.Key);
+            }
+        }
+
+        foreach (object entity in staleContacts)
+        {
+            enemyContacts.Remove(entity);
+        }
+    }
+
+    private void UpdateEnemyContact(
+        object entity,
+        Vector2 currentPosition,
+        bool persistent,
+        float deltaTime
+    )
+    {
+        if (IsVisible(currentPosition))
+        {
+            if (!enemyContacts.TryGetValue(entity, out EnemyContact contact))
+            {
+                contact = new EnemyContact();
+                enemyContacts.Add(entity, contact);
+            }
+
+            contact.Position = currentPosition;
+            contact.Age = 0f;
+            contact.Persistent = persistent;
+            return;
+        }
+
+        if (enemyContacts.TryGetValue(entity, out EnemyContact existing) &&
+            !existing.Persistent)
+        {
+            existing.Age += deltaTime;
         }
     }
 

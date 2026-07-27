@@ -149,23 +149,46 @@ public sealed class RuntimeSystemsTests
             units,
             2.5f,
             2f,
+            8f,
             root.transform
         );
 
         try
         {
-            visibility.Tick();
+            visibility.Tick(0f);
 
             Assert.IsTrue(visibility.IsVisible(enemyPosition));
             Assert.IsTrue(visibility.IsExplored(enemyPosition));
             Assert.IsTrue(enemyObject.activeSelf);
+            Assert.IsTrue(visibility.TryGetLastKnownContact(
+                enemy,
+                out Vector2 observedPosition,
+                out float initialFreshness
+            ));
+            Assert.AreEqual(enemyPosition, observedPosition);
+            Assert.AreEqual(1f, initialFreshness);
 
             enemy.Position = gridMap.CellToWorld(new Vector2Int(8, 8));
-            visibility.Tick();
+            visibility.Tick(2f);
 
             Assert.IsFalse(visibility.IsVisible(enemy.Position));
             Assert.IsTrue(visibility.IsExplored(enemyPosition));
             Assert.IsFalse(enemyObject.activeSelf);
+            Assert.IsTrue(visibility.TryGetLastKnownContact(
+                enemy,
+                out Vector2 lastKnownPosition,
+                out float fadingFreshness
+            ));
+            Assert.AreEqual(enemyPosition, lastKnownPosition);
+            Assert.AreEqual(0.75f, fadingFreshness, 0.001f);
+
+            enemy.Position = gridMap.CellToWorld(new Vector2Int(9, 9));
+            visibility.Tick(6.1f);
+
+            Assert.IsFalse(
+                visibility.TryGetLastKnownContact(enemy, out _, out _),
+                "Hidden movement must not update the snapshot, and stale unit intel should expire."
+            );
         }
         finally
         {
