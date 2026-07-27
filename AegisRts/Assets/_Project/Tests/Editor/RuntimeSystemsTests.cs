@@ -55,7 +55,7 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
-    public void PresentationFactory_UsesAuthoredPrefabAndPreservesSpriteColor()
+    public void PresentationFactory_CreatesSymbolicCircleAndUpdatesColor()
     {
         EntityPresentationFactory presentation = new EntityPresentationFactory(16);
         GameObject root = new GameObject("PresentationRoot");
@@ -74,29 +74,6 @@ public sealed class RuntimeSystemsTests
             Assert.IsNotNull(catalog.EnemyInfantryPrefab);
             Assert.IsNotNull(catalog.CircleOverlayPrefab);
             Assert.IsNotNull(catalog.GridLinePrefab);
-            Assert.IsNotNull(catalog.AttackClip);
-            Assert.IsNotNull(catalog.HitClip);
-            Assert.IsNotNull(catalog.ProductionCompleteClip);
-
-            GameObject[] authoredPrefabs =
-            {
-                catalog.PlayerBasePrefab,
-                catalog.EnemyBasePrefab,
-                catalog.FactoryPrefab,
-                catalog.PlayerInfantryPrefab,
-                catalog.EnemyInfantryPrefab
-            };
-
-            foreach (GameObject authoredPrefab in authoredPrefabs)
-            {
-                SpriteRenderer prefabRenderer = authoredPrefab.GetComponent<SpriteRenderer>();
-                Assert.IsNotNull(prefabRenderer);
-                Assert.IsNotNull(prefabRenderer.sprite);
-                Assert.AreNotEqual("Circle", prefabRenderer.sprite.name);
-                Assert.IsNotNull(authoredPrefab.GetComponent<RtsEntityViewAnimator>());
-                Assert.IsNull(authoredPrefab.GetComponentInChildren<TextMesh>());
-            }
-
             GameObject circle = presentation.CreateLabeledCircle(
                 PresentationEntityKind.EnemyBase,
                 "TestEntity",
@@ -114,10 +91,10 @@ public sealed class RuntimeSystemsTests
 
             Assert.IsNotNull(renderer);
             Assert.IsNotNull(renderer.sprite);
-            Assert.AreNotEqual("Circle", renderer.sprite.name);
-            Assert.IsNull(label);
-            Assert.IsNotNull(animator);
-            Assert.AreEqual(Color.white, renderer.color);
+            Assert.IsNotNull(label);
+            Assert.AreEqual("AI", label.text);
+            Assert.IsNull(animator);
+            Assert.AreEqual(Color.red, renderer.color);
             Assert.AreEqual(root.transform, circle.transform.parent);
 
             presentation.SetCircleColor(circle, Color.green);
@@ -127,6 +104,75 @@ public sealed class RuntimeSystemsTests
         {
             Object.DestroyImmediate(root);
             presentation.Dispose();
+        }
+    }
+
+    [Test]
+    public void Visibility_RevealsNearbyEnemiesAndKeepsExploredCells()
+    {
+        GridMapService gridMap = new GridMapService(10, 1f);
+        GameObject root = new GameObject("VisibilityRoot");
+        GameObject playerObject = new GameObject("PlayerBase");
+        GameObject enemyObject = new GameObject("Enemy");
+        Vector2 playerPosition = gridMap.CellToWorld(new Vector2Int(1, 1));
+        Vector2 enemyPosition = gridMap.CellToWorld(new Vector2Int(2, 1));
+        BuildingData playerBase = new BuildingData(
+            "Player Base",
+            BuildingType.Base,
+            playerObject,
+            playerPosition,
+            new Vector2Int(1, 1),
+            0.5f,
+            string.Empty,
+            Team.Player,
+            100
+        );
+        UnitData enemy = new UnitData(
+            "Enemy",
+            UnitType.Infantry,
+            enemyObject,
+            enemyPosition,
+            new Vector2Int(2, 1),
+            0.4f,
+            string.Empty,
+            Team.Enemy,
+            100,
+            10,
+            1f,
+            1f
+        );
+        List<BuildingData> buildings = new List<BuildingData> { playerBase };
+        List<UnitData> units = new List<UnitData> { enemy };
+        RtsVisibilitySystem visibility = new RtsVisibilitySystem(
+            gridMap,
+            buildings,
+            units,
+            2.5f,
+            2f,
+            root.transform
+        );
+
+        try
+        {
+            visibility.Tick();
+
+            Assert.IsTrue(visibility.IsVisible(enemyPosition));
+            Assert.IsTrue(visibility.IsExplored(enemyPosition));
+            Assert.IsTrue(enemyObject.activeSelf);
+
+            enemy.Position = gridMap.CellToWorld(new Vector2Int(8, 8));
+            visibility.Tick();
+
+            Assert.IsFalse(visibility.IsVisible(enemy.Position));
+            Assert.IsTrue(visibility.IsExplored(enemyPosition));
+            Assert.IsFalse(enemyObject.activeSelf);
+        }
+        finally
+        {
+            visibility.Destroy();
+            Object.DestroyImmediate(root);
+            Object.DestroyImmediate(playerObject);
+            Object.DestroyImmediate(enemyObject);
         }
     }
 

@@ -50,9 +50,14 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float cameraMoveSpeed = 14f;
     [SerializeField] private float cameraZoomSpeed = 3f;
     [SerializeField] private float minCameraSize = 6f;
+    [SerializeField] private float initialCameraSize = 9f;
     [SerializeField] private float maxCameraSize = 18f;
 
     [SerializeField] private float dragSelectThreshold = 10f;
+
+    [Header("Visibility Settings")]
+    [SerializeField] private float buildingSightRange = 7f;
+    [SerializeField] private float unitSightRange = 5f;
 
     private RtsEconomyProductionSystem economy;
     private GridMapService gridMap;
@@ -64,7 +69,7 @@ public class GameBootstrap : MonoBehaviour
     private RtsEntityLifecycle lifecycle;
     private RtsCombatSystem combat;
     private RtsWorldFeedbackSystem feedback;
-    private RtsAudioFeedbackSystem audioFeedback;
+    private RtsVisibilitySystem visibility;
     private RtsSelectionInputController selectionInput;
     private RtsGameUIController ui;
     private bool isPaused;
@@ -160,7 +165,8 @@ public class GameBootstrap : MonoBehaviour
             TrainSelectedFactory,
             ResumeGame,
             RestartGame,
-            ReturnToMainMenu
+            ReturnToMainMenu,
+            NavigateFromMinimap
         );
         mainCamera = Camera.main;
         cameraController = gameObject.AddComponent<RtsCameraController>();
@@ -171,6 +177,7 @@ public class GameBootstrap : MonoBehaviour
             cameraMoveSpeed,
             cameraZoomSpeed,
             minCameraSize,
+            initialCameraSize,
             maxCameraSize
         );
     }
@@ -217,8 +224,11 @@ public class GameBootstrap : MonoBehaviour
         cameraMoveSpeed = gameConfig.CameraMoveSpeed;
         cameraZoomSpeed = gameConfig.CameraZoomSpeed;
         minCameraSize = gameConfig.MinCameraSize;
+        initialCameraSize = gameConfig.InitialCameraSize;
         maxCameraSize = gameConfig.MaxCameraSize;
         dragSelectThreshold = gameConfig.DragSelectThreshold;
+        buildingSightRange = gameConfig.BuildingSightRange;
+        unitSightRange = gameConfig.UnitSightRange;
     }
 
     private void Update()
@@ -236,6 +246,11 @@ public class GameBootstrap : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             isPaused = !isPaused;
+        }
+
+        if (Input.GetKeyDown(KeyCode.M))
+        {
+            cameraController.ToggleStrategicView();
         }
 
         if (isPaused)
@@ -260,6 +275,7 @@ public class GameBootstrap : MonoBehaviour
         combat.Tick(Time.deltaTime);
         feedback?.Tick(Time.deltaTime);
         movement.Tick(Time.deltaTime);
+        visibility?.Tick();
         UpdateSelectionRingPositions();
     }
 
@@ -310,14 +326,21 @@ public class GameBootstrap : MonoBehaviour
         gridRoot = new GameObject("GridRoot").transform;
         buildingRoot = new GameObject("BuildingRoot").transform;
         feedback = new RtsWorldFeedbackSystem(presentation, buildingRoot);
-        audioFeedback = new RtsAudioFeedbackSystem(buildingRoot);
-
         CreateGrid();
         CreateBase();
         CreateEnemyBase();
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
+        visibility = new RtsVisibilitySystem(
+            gridMap,
+            buildings,
+            units,
+            buildingSightRange,
+            unitSightRange,
+            buildingRoot
+        );
+        visibility.Tick();
 
         enemyAI.Reset();
 
@@ -345,8 +368,8 @@ public class GameBootstrap : MonoBehaviour
     {
         feedback?.Clear();
         feedback = null;
-        audioFeedback?.Destroy();
-        audioFeedback = null;
+        visibility?.Destroy();
+        visibility = null;
         ClearUnitSelectionRings();
 
         if (gridRoot != null)
@@ -628,6 +651,14 @@ public class GameBootstrap : MonoBehaviour
         for (int i = buildings.Count - 1; i >= 0; i--)
         {
             BuildingData building = buildings[i];
+
+            if (building.Team == Team.Enemy &&
+                visibility != null &&
+                !visibility.IsVisible(building.Position))
+            {
+                continue;
+            }
+
             float distance = Vector2.Distance(worldPosition, building.Position);
 
             if (distance <= building.Radius + 0.2f)
@@ -644,6 +675,14 @@ public class GameBootstrap : MonoBehaviour
         for (int i = units.Count - 1; i >= 0; i--)
         {
             UnitData unit = units[i];
+
+            if (unit.Team == Team.Enemy &&
+                visibility != null &&
+                !visibility.IsVisible(unit.Position))
+            {
+                continue;
+            }
+
             float distance = Vector2.Distance(worldPosition, unit.Position);
 
             if (distance <= unit.Radius + 0.2f)
@@ -919,7 +958,7 @@ public class GameBootstrap : MonoBehaviour
             new Color(1f, 0.45f, 0.15f, 1f),
             25,
             buildingRoot,
-            "敌",
+            string.Empty,
             Color.black
         );
 
@@ -967,7 +1006,10 @@ public class GameBootstrap : MonoBehaviour
             selectionInput,
             buildings,
             units,
-            mainCamera
+            mainCamera,
+            gridMap.HalfSize,
+            visibility == null ? null : new System.Func<Vector2, bool>(visibility.IsVisible),
+            visibility?.FogTexture
         );
         ui.Tick(Time.unscaledDeltaTime);
     }
@@ -975,7 +1017,7 @@ public class GameBootstrap : MonoBehaviour
     private void OnDestroy()
     {
         feedback?.Clear();
-        audioFeedback?.Destroy();
+        visibility?.Destroy();
         ui?.Destroy();
         presentation?.Dispose();
     }
@@ -993,7 +1035,6 @@ public class GameBootstrap : MonoBehaviour
     private void PlayCombatFeedback(CombatFeedbackEvent combatFeedback)
     {
         feedback?.PlayCombatFeedback(combatFeedback);
-        audioFeedback?.PlayCombat(combatFeedback);
     }
 
     private void ResumeGame()
@@ -1198,7 +1239,6 @@ public class GameBootstrap : MonoBehaviour
         }
 
         SpawnPlayerInfantry(spawnCell);
-        audioFeedback?.PlayProductionComplete();
         return true;
     }
 
@@ -1214,7 +1254,7 @@ public class GameBootstrap : MonoBehaviour
             new Color(0.95f, 0.95f, 0.25f, 1f),
             25,
             buildingRoot,
-            "兵",
+            string.Empty,
             Color.black
         );
 
@@ -1245,6 +1285,16 @@ public class GameBootstrap : MonoBehaviour
         Vector3 mousePosition = Input.mousePosition;
         Vector3 worldPosition = mainCamera.ScreenToWorldPoint(mousePosition);
         return new Vector2(worldPosition.x, worldPosition.y);
+    }
+
+    private void NavigateFromMinimap(Vector2 normalizedPosition)
+    {
+        float mapWorldSize = gridMap.HalfSize * 2f;
+        Vector2 worldPosition = new Vector2(
+            -gridMap.HalfSize + Mathf.Clamp01(normalizedPosition.x) * mapWorldSize,
+            -gridMap.HalfSize + Mathf.Clamp01(normalizedPosition.y) * mapWorldSize
+        );
+        cameraController.CenterOnWorld(worldPosition);
     }
 
     private void SetPlacementPreviewVisible(bool visible)

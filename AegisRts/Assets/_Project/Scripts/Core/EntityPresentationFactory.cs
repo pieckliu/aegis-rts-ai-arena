@@ -5,15 +5,17 @@ internal sealed class EntityPresentationFactory : IDisposable
 {
     private readonly PresentationPrefabCatalog catalog;
     private readonly int fallbackTextureSize;
+    private readonly bool useAuthoredEntityPrefabs;
     private Texture2D fallbackCircleTexture;
     private Sprite fallbackCircleSprite;
     private Material fallbackGridLineMaterial;
 
     public bool UsesPrefabCatalog => catalog != null;
 
-    public EntityPresentationFactory(int circleTextureSize = 128)
+    public EntityPresentationFactory(int circleTextureSize = 128, bool useAuthoredPrefabs = false)
     {
         fallbackTextureSize = Mathf.Max(8, circleTextureSize);
+        useAuthoredEntityPrefabs = useAuthoredPrefabs;
         catalog = Resources.Load<PresentationPrefabCatalog>("PresentationPrefabCatalog");
     }
 
@@ -68,7 +70,7 @@ internal sealed class EntityPresentationFactory : IDisposable
         Color labelColor
     )
     {
-        GameObject template = GetEntityPrefab(entityKind);
+        GameObject template = useAuthoredEntityPrefabs ? GetEntityPrefab(entityKind) : null;
         bool usesAuthoredPrefab = template != null;
         GameObject circleObject = template != null
             ? UnityEngine.Object.Instantiate(template, parent)
@@ -93,6 +95,16 @@ internal sealed class EntityPresentationFactory : IDisposable
         spriteRenderer.sortingOrder = sortingOrder;
 
         TextMesh textMesh = circleObject.GetComponentInChildren<TextMesh>();
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            if (textMesh != null)
+            {
+                textMesh.gameObject.SetActive(false);
+            }
+
+            return circleObject;
+        }
 
         if (textMesh == null && !usesAuthoredPrefab)
         {

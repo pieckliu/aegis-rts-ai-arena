@@ -28,16 +28,19 @@ public sealed class GameBootstrapPlayModeTests
         GameObject playerBase = GameObject.Find("Base");
         Assert.IsNotNull(playerBase);
         Assert.IsNotNull(playerBase.GetComponent<SpriteRenderer>()?.sprite);
-        Assert.AreNotEqual("Circle", playerBase.GetComponent<SpriteRenderer>().sprite.name);
-        Assert.IsNotNull(playerBase.GetComponent<RtsEntityViewAnimator>());
-        Assert.IsNull(playerBase.GetComponentInChildren<TextMesh>());
+        Assert.AreEqual("基地", playerBase.GetComponentInChildren<TextMesh>()?.text);
+        Assert.IsNull(playerBase.GetComponent<RtsEntityViewAnimator>());
+        Assert.IsNotNull(GameObject.Find("FogOfWar"));
+        Assert.IsNotNull(GameObject.Find("Minimap"));
+        Assert.AreEqual(9f, Camera.main.orthographicSize, 0.01f);
+        GameObject mapDot = GameObject.Find("MapDot");
+        Assert.IsNotNull(mapDot);
+        Assert.AreEqual("MinimapDot", mapDot.GetComponent<Image>()?.sprite?.name);
         GameObject audioFeedback = GameObject.Find("AudioFeedback");
-        Assert.IsNotNull(audioFeedback);
-        Assert.IsNotNull(audioFeedback.GetComponent<AudioSource>());
+        Assert.IsNull(audioFeedback);
 
         yield return null;
 
-        Canvas canvas = ui.GetComponent<Canvas>();
         RectTransform[] healthBars = ui
             .GetComponentsInChildren<RectTransform>(true)
             .Where(rect => rect.name == "HealthBar")
@@ -72,21 +75,17 @@ public sealed class GameBootstrapPlayModeTests
 
         GameObject infantry = GameObject.Find("Infantry");
         Assert.IsNotNull(infantry);
-        Assert.IsNotNull(infantry.GetComponent<RtsEntityViewAnimator>());
+        Assert.IsNull(infantry.GetComponent<RtsEntityViewAnimator>());
+        Assert.IsNull(infantry.GetComponentInChildren<TextMesh>());
         healthBars = ui
             .GetComponentsInChildren<RectTransform>(true)
             .Where(rect => rect.name == "HealthBar")
             .ToArray();
-        Vector3 expectedScreen = Camera.main.WorldToScreenPoint(
-            infantry.transform.position + Vector3.up * 0.58f
+        Assert.AreEqual(
+            0,
+            healthBars.Length,
+            "Undamaged and unselected symbolic units should not add UI clutter."
         );
-        Vector2 expectedCanvas = new Vector2(expectedScreen.x, expectedScreen.y) / canvas.scaleFactor;
-        float nearestDistance = healthBars.Min(
-            bar => Vector2.Distance(bar.anchoredPosition, expectedCanvas)
-        );
-
-        Assert.AreEqual(1, healthBars.Length, "Every infantry unit should have exactly one visible health bar.");
-        Assert.Less(nearestDistance, 2f, "The infantry health bar should stay directly above its unit.");
         Assert.IsFalse(productionProgress.activeSelf, "Production progress should hide when the queue is empty.");
     }
 }
