@@ -32,8 +32,28 @@ public sealed class GameBootstrapPlayModeTests
         Assert.IsNull(playerBase.GetComponent<RtsEntityViewAnimator>());
         Assert.IsNotNull(GameObject.Find("FogOfWar"));
         Assert.IsNotNull(GameObject.Find("Minimap"));
-        Assert.AreEqual(9f, Camera.main.orthographicSize, 0.01f);
-        GameObject mapDot = GameObject.Find("MapDot");
+        Assert.AreEqual(6f, Camera.main.orthographicSize, 0.01f);
+        Vector2 requestedFocus = Vector2.Lerp(
+            playerBase.transform.position,
+            Vector2.zero,
+            0.25f
+        );
+        float cameraMaxX = Mathf.Max(
+            0f,
+            16f - Camera.main.orthographicSize * Camera.main.aspect
+        );
+        float cameraMaxY = 16f - Camera.main.orthographicSize;
+        Assert.AreEqual(
+            Mathf.Clamp(requestedFocus.x, -cameraMaxX, cameraMaxX),
+            Camera.main.transform.position.x,
+            0.01f
+        );
+        Assert.AreEqual(
+            Mathf.Clamp(requestedFocus.y, -cameraMaxY, cameraMaxY),
+            Camera.main.transform.position.y,
+            0.01f
+        );
+        GameObject mapDot = GameObject.Find("PlayerBaseMapDot");
         Assert.IsNotNull(mapDot);
         Assert.AreEqual("MinimapDot", mapDot.GetComponent<Image>()?.sprite?.name);
         GameObject audioFeedback = GameObject.Find("AudioFeedback");
@@ -87,5 +107,31 @@ public sealed class GameBootstrapPlayModeTests
             "Undamaged and unselected symbolic units should not add UI clutter."
         );
         Assert.IsFalse(productionProgress.activeSelf, "Production progress should hide when the queue is empty.");
+
+        GameObject playerUnitMapDot = GameObject.Find("PlayerUnitMapDot");
+        Assert.IsNotNull(playerUnitMapDot);
+        RectTransform playerUnitMapRect = playerUnitMapDot.GetComponent<RectTransform>();
+        Vector2 initialMapPosition = playerUnitMapRect.anchorMin;
+        ArenaEntityObservation playerUnit = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Team == Team.Player.ToString());
+        ArenaActionResult moveResult = bootstrap.ExecuteArenaAction(new ArenaAction
+        {
+            Type = "Move",
+            UnitIds = new[] { playerUnit.Id },
+            CellX = 20,
+            CellY = 20
+        });
+
+        Assert.IsTrue(moveResult.Accepted, moveResult.Message);
+        yield return new WaitForSeconds(0.5f);
+        yield return null;
+
+        Assert.AreNotEqual(
+            initialMapPosition,
+            playerUnitMapRect.anchorMin,
+            "The friendly minimap marker should track the unit's live movement."
+        );
     }
 }

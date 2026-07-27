@@ -50,14 +50,16 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float cameraMoveSpeed = 14f;
     [SerializeField] private float cameraZoomSpeed = 3f;
     [SerializeField] private float minCameraSize = 6f;
-    [SerializeField] private float initialCameraSize = 9f;
+    [SerializeField] private float initialCameraSize = 6f;
     [SerializeField] private float maxCameraSize = 18f;
+    [SerializeField, Range(0f, 1f)] private float initialCameraInwardBias = 0.25f;
 
     [SerializeField] private float dragSelectThreshold = 10f;
 
     [Header("Visibility Settings")]
     [SerializeField] private float buildingSightRange = 7f;
     [SerializeField] private float unitSightRange = 5f;
+    [SerializeField] private float enemyLastKnownDuration = 8f;
 
     private RtsEconomyProductionSystem economy;
     private GridMapService gridMap;
@@ -226,9 +228,11 @@ public class GameBootstrap : MonoBehaviour
         minCameraSize = gameConfig.MinCameraSize;
         initialCameraSize = gameConfig.InitialCameraSize;
         maxCameraSize = gameConfig.MaxCameraSize;
+        initialCameraInwardBias = gameConfig.InitialCameraInwardBias;
         dragSelectThreshold = gameConfig.DragSelectThreshold;
         buildingSightRange = gameConfig.BuildingSightRange;
         unitSightRange = gameConfig.UnitSightRange;
+        enemyLastKnownDuration = gameConfig.EnemyLastKnownDuration;
     }
 
     private void Update()
@@ -275,7 +279,7 @@ public class GameBootstrap : MonoBehaviour
         combat.Tick(Time.deltaTime);
         feedback?.Tick(Time.deltaTime);
         movement.Tick(Time.deltaTime);
-        visibility?.Tick();
+        visibility?.Tick(Time.deltaTime);
         UpdateSelectionRingPositions();
     }
 
@@ -329,6 +333,7 @@ public class GameBootstrap : MonoBehaviour
         CreateGrid();
         CreateBase();
         CreateEnemyBase();
+        FocusCameraOnPlayerBase();
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
@@ -338,13 +343,24 @@ public class GameBootstrap : MonoBehaviour
             units,
             buildingSightRange,
             unitSightRange,
+            enemyLastKnownDuration,
             buildingRoot
         );
-        visibility.Tick();
+        visibility.Tick(0f);
 
         enemyAI.Reset();
 
         Debug.Log($"Starting resources: {economy.Resources}");
+    }
+
+    private void FocusCameraOnPlayerBase()
+    {
+        Vector2 focusPosition = Vector2.Lerp(
+            basePosition,
+            Vector2.zero,
+            initialCameraInwardBias
+        );
+        cameraController.CenterOnWorld(focusPosition);
     }
 
     private void RestartGame()
@@ -1008,8 +1024,7 @@ public class GameBootstrap : MonoBehaviour
             units,
             mainCamera,
             gridMap.HalfSize,
-            visibility == null ? null : new System.Func<Vector2, bool>(visibility.IsVisible),
-            visibility?.FogTexture
+            visibility
         );
         ui.Tick(Time.unscaledDeltaTime);
     }

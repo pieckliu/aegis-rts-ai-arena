@@ -44,13 +44,15 @@ public sealed class RtsGameConfig : ScriptableObject
     public float CameraMoveSpeed = 14f;
     public float CameraZoomSpeed = 3f;
     public float MinCameraSize = 6f;
-    public float InitialCameraSize = 9f;
+    public float InitialCameraSize = 6f;
     public float MaxCameraSize = 18f;
+    [Range(0f, 1f)] public float InitialCameraInwardBias = 0.25f;
     public float DragSelectThreshold = 10f;
 
     [Header("Visibility")]
     public float BuildingSightRange = 7f;
     public float UnitSightRange = 5f;
+    public float EnemyLastKnownDuration = 8f;
 
     public bool IsValid()
     {
@@ -72,7 +74,10 @@ public sealed class RtsGameConfig : ScriptableObject
             InitialCameraSize >= MinCameraSize &&
             InitialCameraSize <= MaxCameraSize &&
             MaxCameraSize >= MinCameraSize &&
+            InitialCameraInwardBias >= 0f &&
+            InitialCameraInwardBias <= 1f &&
             BuildingSightRange > 0f &&
-            UnitSightRange > 0f;
+            UnitSightRange > 0f &&
+            EnemyLastKnownDuration > 0f;
     }
 }

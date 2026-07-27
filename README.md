@@ -29,9 +29,9 @@ Playable Unity vertical slice:
 - queue production in factories and wait when an exit is blocked;
 - select, box-select, move, and command groups to attack;
 - navigate groups around occupied grid cells;
-- pan and zoom the bounded battlefield camera;
+- start focused near the player base, then pan and zoom the bounded battlefield camera;
 - explore a three-state fog of war driven by player building and unit sight;
-- use a live tactical minimap, click or drag it to navigate, and press `M` to toggle the strategic overview;
+- use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;
 - read player bases, factories, infantry, and enemies as distinct symbolic dots;
 - use a runtime uGUI menu, command panel, overlays, selection rectangle, and health bars;
 - fight an automatically spawning enemy army;
