@@ -892,7 +892,7 @@ public class GameBootstrap : MonoBehaviour
 
         Vector2Int targetCell = gridMap.WorldToCell(mouseWorldPosition);
 
-        TryMoveSelectedUnitsToCell(targetCell);
+        TryMoveSelectedUnitsToCell(targetCell, mouseWorldPosition);
     }
 
     private void TryAttackSelectedUnits(BuildingData targetBuilding)
@@ -949,9 +949,18 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log($"Attack command: {commandCount} units -> {targetUnit.DisplayName}");
     }
 
-    private void TryMoveSelectedUnitsToCell(Vector2Int centerCell)
+    private void TryMoveSelectedUnitsToCell(
+        Vector2Int centerCell,
+        Vector2? centerWorldPosition = null
+    )
     {
-        int moveCount = movement.CommandGroupMove(selectedUnits, centerCell);
+        int moveCount = centerWorldPosition.HasValue
+            ? movement.CommandGroupMove(
+                selectedUnits,
+                centerCell,
+                centerWorldPosition.Value
+            )
+            : movement.CommandGroupMove(selectedUnits, centerCell);
 
         if (moveCount == 0)
         {

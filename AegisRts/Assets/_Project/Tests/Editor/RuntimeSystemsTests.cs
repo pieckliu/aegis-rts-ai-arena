@@ -326,6 +326,85 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void Movement_UnblockedCommandUsesExactWorldPointAndSingleStraightWaypoint()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 12;
+        config.CellSize = 1f;
+        config.UnitMoveSpeed = 2f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData unit = CreateUnitAt(gridMap, new Vector2Int(1, 1), "Direct");
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { unit }
+        );
+        Vector2 startPosition = unit.Position;
+        Vector2Int targetCell = new Vector2Int(8, 7);
+        Vector2 exactTarget = gridMap.CellToWorld(targetCell) + new Vector2(0.3f, -0.2f);
+
+        int commanded = movement.CommandGroupMove(
+            new List<UnitData> { unit },
+            targetCell,
+            exactTarget
+        );
+
+        Assert.AreEqual(1, commanded);
+        Assert.AreEqual(exactTarget, unit.TargetPosition);
+        Assert.AreEqual(1, unit.Waypoints.Count);
+        Assert.AreEqual(exactTarget, unit.Waypoints[0]);
+
+        movement.Tick(0.5f);
+
+        Assert.AreEqual(
+            Vector2.MoveTowards(startPosition, exactTarget, config.UnitMoveSpeed * 0.5f),
+            unit.Position
+        );
+
+        for (int i = 0; i < 20; i++)
+        {
+            movement.Tick(1f);
+        }
+
+        Assert.IsFalse(unit.IsMoving);
+        Assert.AreEqual(exactTarget, unit.Position);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void Movement_BuildingOnDirectRouteUsesGridWaypoints()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 10;
+        config.CellSize = 1f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData unit = CreateUnitAt(gridMap, new Vector2Int(1, 1), "Pathfinder");
+        Vector2Int buildingCell = new Vector2Int(3, 1);
+        Assert.IsTrue(gridMap.TryOccupy(buildingCell));
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { unit }
+        );
+        Vector2Int targetCell = new Vector2Int(6, 1);
+
+        int commanded = movement.CommandGroupMove(
+            new List<UnitData> { unit },
+            targetCell,
+            gridMap.CellToWorld(targetCell)
+        );
+
+        Assert.AreEqual(1, commanded);
+        Assert.Greater(
+            unit.Waypoints.Count,
+            1,
+            "A building intersecting the direct route should activate grid-based detouring."
+        );
+        Assert.AreNotEqual(unit.TargetPosition, unit.Waypoints[0]);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Movement_CombatPursuitUpdatesOccupiedCell()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();

@@ -28,7 +28,7 @@ Playable Unity vertical slice:
 - build a factory, spend and regenerate resources, and train infantry;
 - queue production in factories and wait when an exit is blocked;
 - select, box-select, move, and command groups to attack;
-- navigate groups around occupied grid cells;
+- move directly to exact clicked positions across clear ground and use grid detours around occupied structures;
 - start focused near the player base, then pan and zoom the bounded battlefield camera;
 - explore a three-state fog of war driven by player building and unit sight;
 - use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;

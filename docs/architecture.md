@@ -7,7 +7,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GameBootstrap` coordinates match state, world creation, scene objects, and the extracted runtime systems.
 - `GridMapService` owns map bounds, coordinate conversion, occupied cells, and nearby open-cell lookup.
 - `BuildingPlacementSystem` validates and atomically reserves paid building placements.
-- `UnitMovementSystem` owns formation-cell assignment, path requests, movement updates, and combat pursuit movement.
+- `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, and combat pursuit movement.
 - `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
 - `EntityPresentationFactory` creates symbolic circle views, grid lines, and overlays. Authored prefabs remain optional and are disabled in the active prototype.
 - `PresentationPrefabCatalog` is the Resources-loaded source of player/enemy building, infantry, overlay, and grid-line prefabs.
