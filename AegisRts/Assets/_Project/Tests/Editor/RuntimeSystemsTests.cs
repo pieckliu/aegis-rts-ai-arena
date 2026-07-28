@@ -405,6 +405,35 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void Movement_SeparatesOverlappingUnitVolumes()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 10;
+        config.CellSize = 1f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData first = CreateUnitAt(gridMap, new Vector2Int(4, 4), "First");
+        UnitData second = CreateUnitAt(gridMap, new Vector2Int(5, 4), "Second");
+        Vector2 overlapPosition = gridMap.CellToWorld(new Vector2Int(4, 4));
+        first.Position = overlapPosition;
+        second.Position = overlapPosition;
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { first, second }
+        );
+
+        movement.Tick(0f);
+
+        float minimumDistance =
+            first.Radius + second.Radius + config.UnitCollisionPadding;
+        Assert.GreaterOrEqual(
+            Vector2.Distance(first.Position, second.Position),
+            minimumDistance - 0.001f
+        );
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Movement_CombatPursuitUpdatesOccupiedCell()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();

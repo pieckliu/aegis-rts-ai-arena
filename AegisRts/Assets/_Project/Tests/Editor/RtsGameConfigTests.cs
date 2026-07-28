@@ -57,6 +57,18 @@ public sealed class RtsGameConfigTests
     }
 
     [Test]
+    public void DefaultConfiguration_UsesExpandedExplorationMap()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+
+        Assert.AreEqual(48, config.MapSize);
+        Assert.AreEqual(26f, config.MaxCameraSize);
+        Assert.Less(config.BuildingSightRange * 2f, config.MapSize * config.CellSize);
+
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Configuration_RejectsInvalidVisibilityMemory()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();

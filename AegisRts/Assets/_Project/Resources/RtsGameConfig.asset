@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bbc7fc19738244b886f3bab34cf63af2, type: 3}
   m_Name: RtsGameConfig
   m_EditorClassIdentifier: AegisRts.Core::RtsGameConfig
-  MapSize: 32
+  MapSize: 48
   CellSize: 1
   BaseRadius: 0.45
   BuildRadius: 7
@@ -38,14 +38,15 @@ MonoBehaviour:
   PassiveResourceIncome: 10
   PassiveResourceInterval: 5
   InfantryRadius: 0.42
+  UnitCollisionPadding: 0.04
   UnitMoveSpeed: 5
   CameraMoveSpeed: 14
   CameraZoomSpeed: 3
   MinCameraSize: 6
   InitialCameraSize: 6
-  MaxCameraSize: 18
+  MaxCameraSize: 26
   InitialCameraInwardBias: 0.25
   DragSelectThreshold: 10
-  BuildingSightRange: 7
+  BuildingSightRange: 6
   UnitSightRange: 5
   EnemyLastKnownDuration: 8

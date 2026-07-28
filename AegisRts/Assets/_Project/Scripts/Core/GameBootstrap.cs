@@ -6,7 +6,7 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private RtsGameConfig gameConfig;
 
     [Header("Map Settings")]
-    [SerializeField] private int mapSize = 32;
+    [SerializeField] private int mapSize = 48;
     [SerializeField] private float cellSize = 1f;
 
     [Header("Base Settings")]
@@ -51,13 +51,13 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float cameraZoomSpeed = 3f;
     [SerializeField] private float minCameraSize = 6f;
     [SerializeField] private float initialCameraSize = 6f;
-    [SerializeField] private float maxCameraSize = 18f;
+    [SerializeField] private float maxCameraSize = 26f;
     [SerializeField, Range(0f, 1f)] private float initialCameraInwardBias = 0.25f;
 
     [SerializeField] private float dragSelectThreshold = 10f;
 
     [Header("Visibility Settings")]
-    [SerializeField] private float buildingSightRange = 7f;
+    [SerializeField] private float buildingSightRange = 6f;
     [SerializeField] private float unitSightRange = 5f;
     [SerializeField] private float enemyLastKnownDuration = 8f;
 

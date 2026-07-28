@@ -4,7 +4,7 @@ using UnityEngine;
 public sealed class RtsGameConfig : ScriptableObject
 {
     [Header("Map")]
-    public int MapSize = 32;
+    public int MapSize = 48;
     public float CellSize = 1f;
 
     [Header("Buildings")]
@@ -40,17 +40,18 @@ public sealed class RtsGameConfig : ScriptableObject
 
     [Header("Movement and Camera")]
     public float InfantryRadius = 0.42f;
+    public float UnitCollisionPadding = 0.04f;
     public float UnitMoveSpeed = 5f;
     public float CameraMoveSpeed = 14f;
     public float CameraZoomSpeed = 3f;
     public float MinCameraSize = 6f;
     public float InitialCameraSize = 6f;
-    public float MaxCameraSize = 18f;
+    public float MaxCameraSize = 26f;
     [Range(0f, 1f)] public float InitialCameraInwardBias = 0.25f;
     public float DragSelectThreshold = 10f;
 
     [Header("Visibility")]
-    public float BuildingSightRange = 7f;
+    public float BuildingSightRange = 6f;
     public float UnitSightRange = 5f;
     public float EnemyLastKnownDuration = 8f;
 
@@ -69,6 +70,7 @@ public sealed class RtsGameConfig : ScriptableObject
             FactoryCost >= 0 &&
             InfantryCost >= 0 &&
             PassiveResourceInterval > 0f &&
+            UnitCollisionPadding >= 0f &&
             UnitMoveSpeed > 0f &&
             MinCameraSize > 0f &&
             InitialCameraSize >= MinCameraSize &&

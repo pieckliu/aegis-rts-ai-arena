@@ -7,7 +7,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GameBootstrap` coordinates match state, world creation, scene objects, and the extracted runtime systems.
 - `GridMapService` owns map bounds, coordinate conversion, occupied cells, and nearby open-cell lookup.
 - `BuildingPlacementSystem` validates and atomically reserves paid building placements.
-- `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, and combat pursuit movement.
+- `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, combat pursuit movement, and deterministic unit-volume separation.
 - `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
 - `EntityPresentationFactory` creates symbolic circle views, grid lines, and overlays. Authored prefabs remain optional and are disabled in the active prototype.
 - `PresentationPrefabCatalog` is the Resources-loaded source of player/enemy building, infantry, overlay, and grid-line prefabs.
@@ -30,7 +30,9 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GridPathfinder` contains deterministic grid path search.
 - `ArenaContracts` defines serializable observations, actions, entities, and results.
 
-The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. `GameBootstrap` loads it at startup and falls back to scene values only if the asset is missing.
+The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. It defines the
+expanded 48×48 exploration map, camera limits, sight ranges, and unit collision padding.
+`GameBootstrap` loads it at startup and falls back to scene values only if the asset is missing.
 
 ## Extraction status
 
