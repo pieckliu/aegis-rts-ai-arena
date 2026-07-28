@@ -64,7 +64,9 @@ internal sealed class RtsCombatSystem
 
         foreach (UnitData candidate in units)
         {
-            if (candidate == null || candidate.Team == source.Team)
+            if (candidate == null ||
+                candidate.Team == source.Team ||
+                candidate.GarrisonBuilding != null)
             {
                 continue;
             }
@@ -93,14 +95,16 @@ internal sealed class RtsCombatSystem
     {
         UnitData target = attacker.AttackUnitTarget;
 
-        if (target == null || !units.Contains(target))
+        if (target == null ||
+            !units.Contains(target) ||
+            target.GarrisonBuilding != null)
         {
             attacker.AttackUnitTarget = null;
             return;
         }
 
         bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
-            attacker.AttackRange + attacker.Radius + target.Radius;
+            attacker.AttackRange + GetAttackOriginRadius(attacker) + target.Radius;
 
         if (!inRange)
         {
@@ -125,7 +129,7 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        int damage = attacker.AttackDamage;
+        int damage = GetAttackDamage(attacker);
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
             attacker,
@@ -153,7 +157,7 @@ internal sealed class RtsCombatSystem
         }
 
         bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
-            attacker.AttackRange + attacker.Radius + target.Radius;
+            attacker.AttackRange + GetAttackOriginRadius(attacker) + target.Radius;
 
         if (!inRange)
         {
@@ -179,7 +183,7 @@ internal sealed class RtsCombatSystem
 
         attacker.AttackTimer = attacker.AttackCooldown;
         int damage = Mathf.RoundToInt(
-            attacker.AttackDamage * attacker.BuildingDamageMultiplier
+            GetAttackDamage(attacker) * attacker.BuildingDamageMultiplier
         );
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
@@ -218,6 +222,22 @@ internal sealed class RtsCombatSystem
 
     private static bool RequiresStationaryDeployment(UnitData unit)
     {
-        return unit.Type == UnitType.Artillery && unit.IsDeployed;
+        return unit.GarrisonBuilding != null ||
+            (unit.Type == UnitType.Artillery && unit.IsDeployed);
+    }
+
+    private static float GetAttackOriginRadius(UnitData unit)
+    {
+        return unit.GarrisonBuilding != null
+            ? unit.GarrisonBuilding.Radius
+            : unit.Radius;
+    }
+
+    private static int GetAttackDamage(UnitData unit)
+    {
+        float multiplier = unit.GarrisonBuilding != null
+            ? unit.GarrisonBuilding.GarrisonDamageMultiplier
+            : 1f;
+        return Mathf.RoundToInt(unit.AttackDamage * multiplier);
     }
 }

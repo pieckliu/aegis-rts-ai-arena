@@ -14,6 +14,7 @@ The snapshot contains:
 - each building's exact occupied grid cells;
 - factory queue count, current production kind, and production progress.
 - artillery deployment state.
+- garrison capacity, occupant count, damage multiplier, and each unit's current garrison building ID.
 
 ## Actions
 
@@ -24,10 +25,13 @@ Supported action types:
 - `Move`: set `UnitIds`, `CellX`, and `CellY`;
 - `Attack`: set `UnitIds` and `TargetId`;
 - `BuildFactory`: set `CellX` and `CellY`;
+- `BuildGarrison`: set `CellX` and `CellY`;
 - `TrainInfantry`: no additional fields are required;
 - `TrainArtillery`: no additional fields are required;
 - `DeployArtillery`: set the artillery `UnitIds`;
-- `UndeployArtillery`: set the artillery `UnitIds`.
+- `UndeployArtillery`: set the artillery `UnitIds`;
+- `Garrison`: set infantry `UnitIds` and the friendly garrison `TargetId`;
+- `EvacuateGarrison`: set the friendly garrison `TargetId`.
 
 Every call returns an `ArenaActionResult` with `Accepted` and `Message`.
 
@@ -39,6 +43,10 @@ An accepted `Move` action clears the unit's current attack target and suppresses
 target acquisition until that movement order finishes. Undeployed artillery can move but
 cannot fire. Deployed artillery cannot move, can attack from
 long range, and deals bonus damage to buildings.
+
+A garrison accepts up to four player infantry. Accepted infantry first move to the building,
+then become stationary and hidden inside it. They automatically attack from the building and
+receive the configured 1.5x damage multiplier. Evacuation returns them to separate open cells.
 
 ## Next bridge
 

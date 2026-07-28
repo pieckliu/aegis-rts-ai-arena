@@ -19,10 +19,13 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float infantryTrainingTime = 3f;
     [SerializeField] private float artilleryTrainingTime = 6f;
     [SerializeField] private int maxFactoryQueueSize = 5;
+    [SerializeField] private int garrisonCapacity = 4;
+    [SerializeField] private float garrisonDamageMultiplier = 1.5f;
 
     [Header("Health Settings")]
     [SerializeField] private int playerBaseHitPoints = 500;
     [SerializeField] private int factoryHitPoints = 300;
+    [SerializeField] private int garrisonHitPoints = 350;
     [SerializeField] private int enemyBaseHitPoints = 400;
 
     [Header("Combat Settings")]
@@ -46,6 +49,7 @@ public class GameBootstrap : MonoBehaviour
     [Header("Resource Settings")]
     [SerializeField] private int startingResources = 500;
     [SerializeField] private int factoryCost = 150;
+    [SerializeField] private int garrisonCost = 120;
     [SerializeField] private int infantryCost = 50;
     [SerializeField] private int artilleryCost = 120;
     [SerializeField] private int passiveResourceIncome = 10;
@@ -155,7 +159,10 @@ public class GameBootstrap : MonoBehaviour
             TryTrainInfantry,
             TryTrainArtillery,
             SetArtilleryDeployment,
-            TryBuildFactoryAtCell
+            TryGarrisonUnits,
+            EvacuateGarrison,
+            TryBuildFactoryAtCell,
+            TryBuildGarrisonAtCell
         );
         lifecycle = new RtsEntityLifecycle(
             buildings,
@@ -176,10 +183,12 @@ public class GameBootstrap : MonoBehaviour
         ui = new RtsGameUIController(
             StartGame,
             SelectFactory,
+            SelectGarrison,
             CancelBuildMode,
             TrainSelectedFactory,
             TrainSelectedFactoryArtillery,
             ToggleSelectedArtilleryDeployment,
+            EvacuateSelectedGarrison,
             ResumeGame,
             RestartGame,
             ReturnToMainMenu,
@@ -222,8 +231,11 @@ public class GameBootstrap : MonoBehaviour
         infantryTrainingTime = gameConfig.InfantryTrainingTime;
         artilleryTrainingTime = gameConfig.ArtilleryTrainingTime;
         maxFactoryQueueSize = gameConfig.MaxFactoryQueueSize;
+        garrisonCapacity = gameConfig.GarrisonCapacity;
+        garrisonDamageMultiplier = gameConfig.GarrisonDamageMultiplier;
         playerBaseHitPoints = gameConfig.PlayerBaseHitPoints;
         factoryHitPoints = gameConfig.FactoryHitPoints;
+        garrisonHitPoints = gameConfig.GarrisonHitPoints;
         enemyBaseHitPoints = gameConfig.EnemyBaseHitPoints;
         infantryAttackDamage = gameConfig.InfantryAttackDamage;
         infantryAttackRange = gameConfig.InfantryAttackRange;
@@ -241,6 +253,7 @@ public class GameBootstrap : MonoBehaviour
         enemyInfantryAttackCooldown = gameConfig.EnemyInfantryAttackCooldown;
         startingResources = gameConfig.StartingResources;
         factoryCost = gameConfig.FactoryCost;
+        garrisonCost = gameConfig.GarrisonCost;
         infantryCost = gameConfig.InfantryCost;
         artilleryCost = gameConfig.ArtilleryCost;
         passiveResourceIncome = gameConfig.PassiveResourceIncome;
@@ -306,6 +319,7 @@ public class GameBootstrap : MonoBehaviour
         combat.Tick(Time.deltaTime);
         feedback?.Tick(Time.deltaTime);
         movement.Tick(Time.deltaTime);
+        UpdatePendingGarrisons();
         visibility?.Tick(Time.deltaTime);
         UpdateSelectionRingPositions();
     }
@@ -642,6 +656,33 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log("Selected building: Factory / 兵厂");
     }
 
+    private void SelectGarrison()
+    {
+        if (!placement.CanAfford(BuildingType.Garrison))
+        {
+            Debug.LogWarning(
+                $"Cannot select Garrison: not enough resources. Need {garrisonCost}, have {economy.Resources}."
+            );
+            ui.ShowNotification($"资源不足：建造驻防建筑需要 {garrisonCost}", true);
+            return;
+        }
+
+        selectedBuilding = BuildingType.Garrison;
+        hasPreviewCell = false;
+
+        if (buildRangeObject != null)
+        {
+            buildRangeObject.SetActive(true);
+        }
+
+        if (placementPreviewObject != null)
+        {
+            placementPreviewObject.SetActive(true);
+        }
+
+        Debug.Log("Selected building: Garrison.");
+    }
+
     private void CancelBuildMode()
     {
         selectedBuilding = BuildingType.None;
@@ -730,7 +771,7 @@ public class GameBootstrap : MonoBehaviour
 
         foreach (UnitData unit in units)
         {
-            if (unit.Team != Team.Player)
+            if (unit.Team != Team.Player || unit.GarrisonBuilding != null)
             {
                 continue;
             }
@@ -782,6 +823,11 @@ public class GameBootstrap : MonoBehaviour
         for (int i = units.Count - 1; i >= 0; i--)
         {
             UnitData unit = units[i];
+
+            if (unit.GarrisonBuilding != null)
+            {
+                continue;
+            }
 
             if (unit.Team == Team.Enemy &&
                 visibility != null &&
@@ -848,7 +894,9 @@ public class GameBootstrap : MonoBehaviour
 
         foreach (UnitData unit in unitsToSelect)
         {
-            if (unit == null || unit.Team != Team.Player)
+            if (unit == null ||
+                unit.Team != Team.Player ||
+                unit.GarrisonBuilding != null)
             {
                 continue;
             }
@@ -1003,6 +1051,14 @@ public class GameBootstrap : MonoBehaviour
 
         BuildingData targetBuilding = FindBuildingAt(mouseWorldPosition);
 
+        if (targetBuilding != null &&
+            targetBuilding.Team == Team.Player &&
+            targetBuilding.Type == BuildingType.Garrison)
+        {
+            TryGarrisonUnits(selectedUnits, targetBuilding);
+            return;
+        }
+
         if (targetBuilding != null && targetBuilding.Team == Team.Enemy)
         {
             TryAttackSelectedUnits(targetBuilding);
@@ -1033,6 +1089,7 @@ public class GameBootstrap : MonoBehaviour
 
             unit.AttackTarget = targetBuilding;
             unit.AttackUnitTarget = null;
+            unit.GarrisonTarget = null;
             unit.IsMoving = false;
             unit.Waypoints.Clear();
             commandCount++;
@@ -1060,6 +1117,7 @@ public class GameBootstrap : MonoBehaviour
 
             unit.AttackUnitTarget = targetUnit;
             unit.AttackTarget = null;
+            unit.GarrisonTarget = null;
             unit.IsMoving = false;
             unit.Waypoints.Clear();
             commandCount++;
@@ -1141,6 +1199,7 @@ public class GameBootstrap : MonoBehaviour
             gameLost,
             economy.Resources,
             factoryCost,
+            garrisonCost,
             infantryCost,
             artilleryCost,
             maxFactoryQueueSize,
@@ -1240,6 +1299,252 @@ public class GameBootstrap : MonoBehaviour
         }
     }
 
+    private int TryGarrisonUnits(
+        List<UnitData> actors,
+        BuildingData targetBuilding
+    )
+    {
+        if (targetBuilding == null ||
+            targetBuilding.Team != Team.Player ||
+            targetBuilding.Type != BuildingType.Garrison)
+        {
+            return 0;
+        }
+
+        int reservedSlots = targetBuilding.GarrisonedUnits.Count;
+
+        foreach (UnitData unit in units)
+        {
+            if (unit != null && unit.GarrisonTarget == targetBuilding)
+            {
+                reservedSlots++;
+            }
+        }
+
+        int orderedCount = 0;
+
+        foreach (UnitData unit in new List<UnitData>(actors))
+        {
+            if (reservedSlots >= targetBuilding.GarrisonCapacity ||
+                unit == null ||
+                unit.Team != Team.Player ||
+                unit.Type != UnitType.Infantry ||
+                unit.GarrisonTarget != null ||
+                unit.GarrisonBuilding != null)
+            {
+                continue;
+            }
+
+            if (!gridMap.TryFindOpenCellNear(
+                    targetBuilding.Cell,
+                    out Vector2Int approachCell
+                ))
+            {
+                break;
+            }
+
+            int commanded = movement.CommandGroupMove(
+                new List<UnitData> { unit },
+                approachCell
+            );
+
+            if (commanded == 0)
+            {
+                continue;
+            }
+
+            unit.GarrisonTarget = targetBuilding;
+            reservedSlots++;
+            orderedCount++;
+        }
+
+        if (orderedCount > 0)
+        {
+            ui.ShowNotification(
+                $"已命令 {orderedCount} 名步兵进入驻防建筑"
+            );
+        }
+        else
+        {
+            ui.ShowNotification(
+                $"无法驻防：仅步兵可以进入，容量 {targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}",
+                true
+            );
+        }
+
+        return orderedCount;
+    }
+
+    private void UpdatePendingGarrisons()
+    {
+        foreach (UnitData unit in new List<UnitData>(units))
+        {
+            BuildingData targetBuilding = unit?.GarrisonTarget;
+
+            if (targetBuilding == null)
+            {
+                continue;
+            }
+
+            if (!buildings.Contains(targetBuilding) ||
+                targetBuilding.Team != Team.Player ||
+                targetBuilding.Type != BuildingType.Garrison)
+            {
+                unit.GarrisonTarget = null;
+                continue;
+            }
+
+            if (unit.IsMoving)
+            {
+                continue;
+            }
+
+            EnterGarrison(unit, targetBuilding);
+        }
+    }
+
+    private bool EnterGarrison(UnitData unit, BuildingData targetBuilding)
+    {
+        if (unit == null ||
+            targetBuilding == null ||
+            unit.Type != UnitType.Infantry ||
+            unit.Team != targetBuilding.Team ||
+            unit.GarrisonBuilding != null ||
+            targetBuilding.GarrisonedUnits.Count >= targetBuilding.GarrisonCapacity)
+        {
+            if (unit != null)
+            {
+                unit.GarrisonTarget = null;
+            }
+
+            return false;
+        }
+
+        gridMap.Release(unit.Cell);
+        unit.GarrisonTarget = null;
+        unit.GarrisonBuilding = targetBuilding;
+        unit.Position = targetBuilding.Position;
+        unit.Cell = targetBuilding.Cell;
+        unit.TargetPosition = targetBuilding.Position;
+        unit.TargetCell = targetBuilding.Cell;
+        unit.IsMoving = false;
+        unit.Waypoints.Clear();
+        unit.AttackTarget = null;
+        unit.AttackUnitTarget = null;
+        targetBuilding.GarrisonedUnits.Add(unit);
+
+        if (unit.GameObject != null)
+        {
+            unit.GameObject.transform.position = new Vector3(
+                targetBuilding.Position.x,
+                targetBuilding.Position.y,
+                0f
+            );
+            unit.GameObject.SetActive(false);
+        }
+
+        RemoveUnitFromSelection(unit);
+        Debug.Log(
+            $"{unit.DisplayName} entered {targetBuilding.DisplayName}. " +
+            $"Garrison: {targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}"
+        );
+        return true;
+    }
+
+    private void EvacuateSelectedGarrison()
+    {
+        if (selectedBuildingData == null ||
+            selectedBuildingData.Type != BuildingType.Garrison)
+        {
+            return;
+        }
+
+        EvacuateGarrison(selectedBuildingData);
+    }
+
+    private void EvacuateGarrison(BuildingData building)
+    {
+        int evacuatedCount = EvacuateGarrison(building, true);
+
+        if (evacuatedCount == 0)
+        {
+            ui.ShowNotification("驻防建筑内没有可撤出的步兵", true);
+        }
+    }
+
+    private int EvacuateGarrison(BuildingData building, bool showNotification)
+    {
+        if (building == null || building.Type != BuildingType.Garrison)
+        {
+            return 0;
+        }
+
+        int evacuatedCount = 0;
+
+        foreach (UnitData unit in new List<UnitData>(building.GarrisonedUnits))
+        {
+            if (!gridMap.TryFindOpenCellNear(
+                    building.Cell,
+                    out Vector2Int exitCell
+                ) ||
+                !gridMap.TryOccupy(exitCell))
+            {
+                continue;
+            }
+
+            building.GarrisonedUnits.Remove(unit);
+            unit.GarrisonBuilding = null;
+            unit.GarrisonTarget = null;
+            unit.Cell = exitCell;
+            unit.TargetCell = exitCell;
+            unit.Position = gridMap.CellToWorld(exitCell);
+            unit.TargetPosition = unit.Position;
+            unit.IsMoving = false;
+            unit.Waypoints.Clear();
+            unit.AttackTarget = null;
+            unit.AttackUnitTarget = null;
+
+            if (unit.GameObject != null)
+            {
+                unit.GameObject.transform.position = new Vector3(
+                    unit.Position.x,
+                    unit.Position.y,
+                    0f
+                );
+                unit.GameObject.SetActive(true);
+            }
+
+            evacuatedCount++;
+        }
+
+        if (showNotification && evacuatedCount > 0)
+        {
+            ui.ShowNotification($"已撤出 {evacuatedCount} 名驻防步兵");
+        }
+
+        return evacuatedCount;
+    }
+
+    private void RemoveUnitFromSelection(UnitData unit)
+    {
+        if (selectedUnitData == unit)
+        {
+            selectedUnitData = null;
+        }
+
+        selectedUnits.Remove(unit);
+
+        if (unitSelectionRings.TryGetValue(unit, out GameObject ringObject))
+        {
+            if (ringObject != null)
+            {
+                Destroy(ringObject);
+            }
+
+            unitSelectionRings.Remove(unit);
+        }
+    }
+
     private void PlayCombatFeedback(CombatFeedbackEvent combatFeedback)
     {
         feedback?.PlayCombatFeedback(combatFeedback);
@@ -1273,9 +1578,16 @@ public class GameBootstrap : MonoBehaviour
 
     private void OnBuildingRemoved(BuildingData building)
     {
+        EvacuateGarrison(building, false);
+
         if (selectedBuildingData == building)
         {
             selectedBuildingData = null;
+
+            if (selectionRingObject != null)
+            {
+                selectionRingObject.SetActive(false);
+            }
         }
 
         if (building == enemyBaseData)
@@ -1357,7 +1669,13 @@ public class GameBootstrap : MonoBehaviour
             if (!placement.CanAfford(selectedBuilding))
             {
                 Debug.LogWarning($"Cannot build: not enough resources. Need {placement.GetCost(selectedBuilding)}, have {economy.Resources}.");
-                ui.ShowNotification($"资源不足：建造兵厂需要 {placement.GetCost(selectedBuilding)}", true);
+                string buildingName = selectedBuilding == BuildingType.Garrison
+                    ? "驻防建筑"
+                    : "兵厂";
+                ui.ShowNotification(
+                    $"资源不足：建造{buildingName}需要 {placement.GetCost(selectedBuilding)}",
+                    true
+                );
             }
             else
             {
@@ -1368,7 +1686,14 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
-        BuildFactory(currentPreviewPosition, currentPreviewCell);
+        if (selectedBuilding == BuildingType.Garrison)
+        {
+            BuildGarrison(currentPreviewPosition, currentPreviewCell);
+        }
+        else
+        {
+            BuildFactory(currentPreviewPosition, currentPreviewCell);
+        }
     }
 
     private bool BuildFactory(Vector2 position, Vector2Int cell)
@@ -1437,6 +1762,56 @@ public class GameBootstrap : MonoBehaviour
         }
 
         ui.ShowNotification($"步兵已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
+        return true;
+    }
+
+    private bool BuildGarrison(Vector2 position, Vector2Int cell)
+    {
+        if (!placement.TryReserve(
+                BuildingType.Garrison,
+                basePosition,
+                position,
+                cell
+            ))
+        {
+            return false;
+        }
+
+        GameObject garrisonObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.Garrison,
+            "Garrison",
+            position,
+            buildingRadius,
+            new Color(0.15f, 0.8f, 0.85f, 1f),
+            20,
+            buildingRoot,
+            "驻",
+            Color.black
+        );
+
+        BuildingData garrison = new BuildingData(
+            "驻防建筑",
+            BuildingType.Garrison,
+            garrisonObject,
+            position,
+            cell,
+            buildingRadius,
+            $"驻防建筑：选中步兵后右键建筑进入，最多容纳 {garrisonCapacity} 名；驻防步兵攻击伤害提高 {Mathf.RoundToInt((garrisonDamageMultiplier - 1f) * 100f)}%。",
+            Team.Player,
+            garrisonHitPoints,
+            placement.GetFootprint(BuildingType.Garrison, cell)
+        )
+        {
+            GarrisonCapacity = garrisonCapacity,
+            GarrisonDamageMultiplier = garrisonDamageMultiplier
+        };
+        garrison.Id = nextEntityId++;
+        buildings.Add(garrison);
+
+        Debug.Log(
+            $"Garrison built at cell {cell}. Remaining resources: {economy.Resources}"
+        );
+        ui.ShowNotification("驻防建筑建造完成");
         return true;
     }
 
@@ -1638,6 +2013,11 @@ public class GameBootstrap : MonoBehaviour
     private bool TryBuildFactoryAtCell(Vector2Int cell)
     {
         return BuildFactory(gridMap.CellToWorld(cell), cell);
+    }
+
+    private bool TryBuildGarrisonAtCell(Vector2Int cell)
+    {
+        return BuildGarrison(gridMap.CellToWorld(cell), cell);
     }
 
 }

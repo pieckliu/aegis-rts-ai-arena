@@ -53,6 +53,7 @@ internal sealed class UnitMovementSystem
         {
             if (unit == null ||
                 unit.Team != Team.Player ||
+                unit.GarrisonBuilding != null ||
                 (unit.Type == UnitType.Artillery && unit.IsDeployed))
             {
                 continue;
@@ -88,7 +89,7 @@ internal sealed class UnitMovementSystem
 
         foreach (UnitData unit in units)
         {
-            if (unit != null)
+            if (unit != null && unit.GarrisonBuilding == null)
             {
                 obstacleCells.Remove(unit.Cell);
             }
@@ -142,6 +143,7 @@ internal sealed class UnitMovementSystem
 
             unit.AttackTarget = null;
             unit.AttackUnitTarget = null;
+            unit.GarrisonTarget = null;
             unit.Cell = targetCell;
             unit.TargetCell = targetCell;
             unit.TargetPosition = targetPosition;
@@ -303,6 +305,7 @@ internal sealed class UnitMovementSystem
     public void MoveTowards(UnitData unit, Vector2 targetPosition, float deltaTime)
     {
         if (unit == null ||
+            unit.GarrisonBuilding != null ||
             (unit.Type == UnitType.Artillery && unit.IsDeployed))
         {
             return;
@@ -406,9 +409,9 @@ internal sealed class UnitMovementSystem
 
             for (int firstIndex = 0; firstIndex < units.Count; firstIndex++)
             {
-                UnitData first = units[firstIndex];
+            UnitData first = units[firstIndex];
 
-                if (first == null)
+                if (first == null || first.GarrisonBuilding != null)
                 {
                     continue;
                 }
@@ -417,7 +420,7 @@ internal sealed class UnitMovementSystem
                 {
                     UnitData second = units[secondIndex];
 
-                    if (second == null)
+                    if (second == null || second.GarrisonBuilding != null)
                     {
                         continue;
                     }
@@ -518,7 +521,7 @@ internal sealed class UnitMovementSystem
 
         foreach (UnitData unit in units)
         {
-            if (unit != null)
+            if (unit != null && unit.GarrisonBuilding == null)
             {
                 collisionObstacleCells.Remove(unit.Cell);
             }

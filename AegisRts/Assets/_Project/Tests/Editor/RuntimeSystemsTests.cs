@@ -770,6 +770,9 @@ public sealed class RuntimeSystemsTests
             _ => false,
             _ => false,
             (_, _) => { },
+            (_, _) => 0,
+            _ => { },
+            _ => false,
             _ => false
         );
 
@@ -1007,6 +1010,179 @@ public sealed class RuntimeSystemsTests
         Assert.AreEqual(0, artillery.Waypoints.Count);
         Assert.IsTrue(gridMap.IsOccupied(artillery.Cell));
         Assert.IsFalse(gridMap.IsOccupied(reservedDestination));
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void Placement_ReservesGarrisonFootprintAndSpendsConfiguredCost()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        GridMapService gridMap = new GridMapService(12, 1f);
+        RtsEconomyProductionSystem economy = new RtsEconomyProductionSystem(config);
+        BuildingPlacementSystem placement = new BuildingPlacementSystem(
+            config,
+            economy,
+            gridMap
+        );
+        Vector2Int baseCell = new Vector2Int(3, 3);
+        Vector2Int garrisonCell = new Vector2Int(7, 7);
+        Vector2 basePosition = gridMap.CellToWorld(baseCell);
+        Vector2 garrisonPosition = gridMap.CellToWorld(garrisonCell);
+
+        Assert.IsTrue(placement.TryReserve(
+            BuildingType.Garrison,
+            basePosition,
+            garrisonPosition,
+            garrisonCell
+        ));
+
+        List<Vector2Int> footprint = placement.GetFootprint(
+            BuildingType.Garrison,
+            garrisonCell
+        );
+        Assert.AreEqual(9, footprint.Count);
+        Assert.IsTrue(footprint.TrueForAll(gridMap.IsOccupied));
+        Assert.AreEqual(
+            config.StartingResources - config.GarrisonCost,
+            economy.Resources
+        );
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void GarrisonedInfantry_IsImmobileAndDoesNotReleaseBuildingFootprintOnDeath()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        GridMapService gridMap = new GridMapService(12, 1f);
+        Vector2Int buildingCell = new Vector2Int(6, 6);
+        List<Vector2Int> footprint = gridMap.GetSquareFootprint(buildingCell, 1);
+        Assert.IsTrue(gridMap.TryOccupy(footprint));
+        BuildingData garrison = new BuildingData(
+            "Garrison",
+            BuildingType.Garrison,
+            null,
+            gridMap.CellToWorld(buildingCell),
+            buildingCell,
+            config.BuildingRadius,
+            string.Empty,
+            Team.Player,
+            config.GarrisonHitPoints,
+            footprint
+        );
+        UnitData infantry = new UnitData(
+            "Infantry",
+            UnitType.Infantry,
+            null,
+            garrison.Position,
+            buildingCell,
+            config.InfantryRadius,
+            string.Empty,
+            Team.Player,
+            config.PlayerInfantryHitPoints,
+            config.InfantryAttackDamage,
+            config.InfantryAttackRange,
+            config.InfantryAttackCooldown
+        )
+        {
+            GarrisonBuilding = garrison
+        };
+        garrison.GarrisonedUnits.Add(infantry);
+        List<BuildingData> buildings = new List<BuildingData> { garrison };
+        List<UnitData> units = new List<UnitData> { infantry };
+        UnitMovementSystem movement = new UnitMovementSystem(config, gridMap, units);
+        RtsEntityLifecycle lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            gridMap.OccupiedCells,
+            null,
+            null
+        );
+
+        Assert.AreEqual(0, movement.CommandGroupMove(
+            new List<UnitData> { infantry },
+            new Vector2Int(9, 9)
+        ));
+        lifecycle.DestroyUnit(infantry);
+
+        Assert.IsTrue(footprint.TrueForAll(gridMap.IsOccupied));
+        Assert.AreEqual(0, garrison.GarrisonedUnits.Count);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void GarrisonedInfantry_ReceivesConfiguredAttackDamageBonus()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        BuildingData garrison = new BuildingData(
+            "Garrison",
+            BuildingType.Garrison,
+            null,
+            Vector2.zero,
+            Vector2Int.zero,
+            config.BuildingRadius,
+            string.Empty,
+            Team.Player,
+            config.GarrisonHitPoints
+        )
+        {
+            GarrisonCapacity = config.GarrisonCapacity,
+            GarrisonDamageMultiplier = config.GarrisonDamageMultiplier
+        };
+        UnitData attacker = new UnitData(
+            "Defender",
+            UnitType.Infantry,
+            null,
+            Vector2.zero,
+            Vector2Int.zero,
+            config.InfantryRadius,
+            string.Empty,
+            Team.Player,
+            100,
+            20,
+            2f,
+            1f
+        )
+        {
+            GarrisonBuilding = garrison
+        };
+        UnitData target = new UnitData(
+            "Enemy",
+            UnitType.Infantry,
+            null,
+            Vector2.right,
+            Vector2Int.right,
+            config.InfantryRadius,
+            string.Empty,
+            Team.Enemy,
+            100,
+            1,
+            1f,
+            1f
+        );
+        garrison.GarrisonedUnits.Add(attacker);
+        List<BuildingData> buildings = new List<BuildingData> { garrison };
+        List<UnitData> units = new List<UnitData> { attacker, target };
+        RtsEntityLifecycle lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            new HashSet<Vector2Int>(),
+            null,
+            null
+        );
+        RtsCombatSystem combat = new RtsCombatSystem(
+            config,
+            buildings,
+            units,
+            (_, _) => { },
+            lifecycle
+        );
+
+        combat.Tick(0.1f);
+
+        Assert.AreEqual(
+            100 - Mathf.RoundToInt(20 * config.GarrisonDamageMultiplier),
+            target.HitPoints
+        );
         Object.DestroyImmediate(config);
     }
 

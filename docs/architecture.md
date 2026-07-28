@@ -6,7 +6,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 
 - `GameBootstrap` coordinates match state, world creation, scene objects, and the extracted runtime systems.
 - `GridMapService` owns map bounds, coordinate conversion, atomic multi-cell occupancy, and nearby open-cell lookup.
-- `BuildingPlacementSystem` validates and atomically reserves paid 3×3 building footprints.
+- `BuildingPlacementSystem` validates and atomically reserves paid 3×3 factory and garrison footprints.
 - `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, combat pursuit movement, and deterministic unit-volume separation.
 - `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
 - `EntityPresentationFactory` creates symbolic circle views, grid lines, and overlays. Authored prefabs remain optional and are disabled in the active prototype.
@@ -19,10 +19,10 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
 - `RtsSelectionInputController` owns click, empty-ground box selection, direct unit-drag movement, and command-input state.
 - `RtsEconomyProductionSystem` owns player resources, passive income, ordered mixed-unit factory queues, and per-unit production timing.
-- `RtsCombatSystem` owns target acquisition, pursuit, artillery deployment firing rules, cooldowns, target-specific damage multipliers, and combat resolution.
+- `RtsCombatSystem` owns target acquisition, pursuit, artillery deployment and infantry-garrison firing rules, cooldowns, target-specific damage multipliers, and combat resolution.
 - `CombatFeedbackEvent` is the one-way boundary from deterministic combat resolution to presentation.
 - `RtsWorldFeedbackSystem` owns transient attack projectiles, hit flashes, and death pulses.
-- `RtsEntityLifecycle` owns entity removal, occupancy cleanup, target cleanup, and destruction callbacks.
+- `RtsEntityLifecycle` owns entity removal, occupancy cleanup, target cleanup, garrison membership cleanup, and destruction callbacks.
 - `ArenaOrchestrator` owns observation building, action validation, entity lookup, and command routing.
 - `RtsGameUIController` builds and updates the runtime uGUI menu, minimal gameplay controls, tactical minimap, camera viewport, selection rectangle, health bars, production progress, and transient notifications.
 - `MinimapPointerHandler` converts minimap pointer and drag input into normalized camera-navigation requests.
@@ -47,7 +47,7 @@ leaking information. Friendly minimap contacts update from live positions; hidde
 contacts remain frozen at their last observed position and expire after the configured memory
 duration, while discovered static enemy buildings remain as dim strategic intelligence.
 
-Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue, so the Arena observation and action contract stays unchanged.
+Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue. Garrison capacity, occupants, and entry/evacuation actions are exposed through the Arena contract.
 
 Authored art and audio provenance is documented in `docs/art-audio-assets.md`. Enemy strategy can
 evolve behind `EnemyAISystem` without changing the Arena contract.

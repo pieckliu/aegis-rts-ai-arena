@@ -28,6 +28,7 @@ Playable Unity vertical slice:
 - explore an expanded 48×48 battlefield that opens around the player base;
 - place 3×3-footprint bases and factories that block movement and constrain base layouts;
 - spend and regenerate resources, then train infantry or deployable long-range artillery;
+- construct garrison buildings, move up to four infantry inside, and gain a 50% attack-damage bonus while defending from them;
 - use a shared ordered factory queue and wait when every footprint-adjacent exit is blocked;
 - select, box-select, drag friendly units to move, and command groups to attack;
 - interrupt infantry combat with a new move order so player-controlled units can retreat;

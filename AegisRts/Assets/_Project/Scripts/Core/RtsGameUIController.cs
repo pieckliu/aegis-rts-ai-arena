@@ -39,6 +39,7 @@ internal sealed class RtsGameUIController
     private readonly Text artilleryButtonText;
     private readonly Button deploymentButton;
     private readonly Text deploymentButtonText;
+    private readonly Button evacuateGarrisonButton;
     private readonly GameObject productionProgress;
     private readonly RectTransform productionFill;
     private readonly Text productionText;
@@ -55,10 +56,12 @@ internal sealed class RtsGameUIController
     public RtsGameUIController(
         Action startGame,
         Action selectFactory,
+        Action selectGarrison,
         Action cancelBuild,
         Action trainInfantry,
         Action trainArtillery,
         Action toggleArtilleryDeployment,
+        Action evacuateGarrison,
         Action resume,
         Action restart,
         Action returnToMenu,
@@ -89,23 +92,26 @@ internal sealed class RtsGameUIController
         CreateButton("Start", menuPanel.transform, "开始游戏", new Vector2(0.4f, 0.42f), new Vector2(0.6f, 0.50f), startGame);
 
         hudPanel = CreatePanel("Hud", canvasObject.transform, Vector2.zero, Vector2.one, Color.clear);
-        resourceText = CreateText("Resources", hudPanel.transform, string.Empty, 24, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.93f), new Vector2(0.65f, 0.985f));
-        GameObject commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.40f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 0.94f));
-        CreateText("PanelTitle", commandPanel.transform, "指挥面板", 26, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.89f), new Vector2(0.92f, 0.98f));
-        CreateButton("BuildFactory", commandPanel.transform, "建造兵厂", new Vector2(0.08f, 0.77f), new Vector2(0.92f, 0.87f), selectFactory);
-        cancelBuildButton = CreateButton("CancelBuild", commandPanel.transform, "取消建造", new Vector2(0.08f, 0.65f), new Vector2(0.92f, 0.75f), cancelBuild);
-        trainButton = CreateButton("Train", commandPanel.transform, "生产步兵", new Vector2(0.08f, 0.52f), new Vector2(0.92f, 0.62f), trainInfantry);
+        resourceText = CreateText("Resources", hudPanel.transform, string.Empty, 21, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.93f), new Vector2(0.76f, 0.985f));
+        GameObject commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.30f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 0.94f));
+        CreateText("PanelTitle", commandPanel.transform, "指挥面板", 26, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.91f), new Vector2(0.92f, 0.98f));
+        CreateButton("BuildFactory", commandPanel.transform, "建造兵厂", new Vector2(0.08f, 0.81f), new Vector2(0.92f, 0.89f), selectFactory);
+        CreateButton("BuildGarrison", commandPanel.transform, "建造驻防建筑", new Vector2(0.08f, 0.72f), new Vector2(0.92f, 0.80f), selectGarrison);
+        cancelBuildButton = CreateButton("CancelBuild", commandPanel.transform, "取消建造", new Vector2(0.08f, 0.63f), new Vector2(0.92f, 0.71f), cancelBuild);
+        trainButton = CreateButton("Train", commandPanel.transform, "生产步兵", new Vector2(0.08f, 0.53f), new Vector2(0.92f, 0.61f), trainInfantry);
         trainButtonText = trainButton.GetComponentInChildren<Text>();
-        artilleryButton = CreateButton("TrainArtillery", commandPanel.transform, "生产火炮", new Vector2(0.08f, 0.40f), new Vector2(0.92f, 0.50f), trainArtillery);
+        artilleryButton = CreateButton("TrainArtillery", commandPanel.transform, "生产火炮", new Vector2(0.08f, 0.44f), new Vector2(0.92f, 0.52f), trainArtillery);
         artilleryButtonText = artilleryButton.GetComponentInChildren<Text>();
-        deploymentButton = CreateButton("ToggleArtilleryDeployment", commandPanel.transform, "部署火炮", new Vector2(0.08f, 0.28f), new Vector2(0.92f, 0.38f), toggleArtilleryDeployment);
+        deploymentButton = CreateButton("ToggleArtilleryDeployment", commandPanel.transform, "部署火炮", new Vector2(0.08f, 0.35f), new Vector2(0.92f, 0.43f), toggleArtilleryDeployment);
         deploymentButtonText = deploymentButton.GetComponentInChildren<Text>();
         deploymentButton.gameObject.SetActive(false);
+        evacuateGarrisonButton = CreateButton("EvacuateGarrison", commandPanel.transform, "撤出驻防步兵", new Vector2(0.08f, 0.26f), new Vector2(0.92f, 0.34f), evacuateGarrison);
+        evacuateGarrisonButton.gameObject.SetActive(false);
         productionProgress = CreatePanel(
             "ProductionProgress",
             commandPanel.transform,
-            new Vector2(0.08f, 0.24f),
-            new Vector2(0.92f, 0.27f),
+            new Vector2(0.08f, 0.22f),
+            new Vector2(0.92f, 0.25f),
             new Color(0.02f, 0.08f, 0.12f, 0.95f)
         );
         productionProgress.GetComponent<Image>().raycastTarget = false;
@@ -128,7 +134,7 @@ internal sealed class RtsGameUIController
             Vector2.one
         );
         productionProgress.SetActive(false);
-        infoText = CreateText("Info", commandPanel.transform, "未选中对象", 17, TextAnchor.UpperLeft, new Vector2(0.08f, 0.03f), new Vector2(0.92f, 0.22f));
+        infoText = CreateText("Info", commandPanel.transform, "未选中对象", 16, TextAnchor.UpperLeft, new Vector2(0.08f, 0.02f), new Vector2(0.92f, 0.20f));
 
         notificationPanel = CreatePanel(
             "Notification",
@@ -250,6 +256,7 @@ internal sealed class RtsGameUIController
         bool lost,
         int resources,
         int factoryCost,
+        int garrisonCost,
         int infantryCost,
         int artilleryCost,
         int maxQueue,
@@ -277,7 +284,7 @@ internal sealed class RtsGameUIController
             return;
         }
 
-        resourceText.text = $"资源：{resources}    兵厂：{factoryCost}    步兵：{infantryCost}    火炮：{artilleryCost}    WASD 移动 / 滚轮缩放 / M 战略视角 / Esc 暂停";
+        resourceText.text = $"资源：{resources}  兵厂：{factoryCost}  驻防：{garrisonCost}  步兵：{infantryCost}  火炮：{artilleryCost}  WASD 移动 / M 战略视角 / Esc 暂停";
         cancelBuildButton.gameObject.SetActive(buildMode != BuildingType.None);
         bool factorySelected = selectedBuilding != null && selectedBuilding.Type == BuildingType.Factory;
         trainButton.interactable = factorySelected;
@@ -311,6 +318,11 @@ internal sealed class RtsGameUIController
         deploymentButtonText.text = allSelectedArtilleryDeployed
             ? "取消部署"
             : "部署火炮";
+        bool garrisonSelected = selectedBuilding != null &&
+            selectedBuilding.Type == BuildingType.Garrison;
+        evacuateGarrisonButton.gameObject.SetActive(
+            garrisonSelected && selectedBuilding.GarrisonedUnits.Count > 0
+        );
         BuildingData producingFactory = factorySelected ? selectedBuilding : null;
 
         if (producingFactory == null)
@@ -350,7 +362,10 @@ internal sealed class RtsGameUIController
 
         if (selectedBuilding != null)
         {
-            infoText.text = $"{selectedBuilding.DisplayName}\n生命：{selectedBuilding.HitPoints}/{selectedBuilding.MaxHitPoints}\n{selectedBuilding.Description}";
+            string garrisonStatus = selectedBuilding.Type == BuildingType.Garrison
+                ? $"\n驻防：{selectedBuilding.GarrisonedUnits.Count}/{selectedBuilding.GarrisonCapacity}  伤害加成：{Mathf.RoundToInt((selectedBuilding.GarrisonDamageMultiplier - 1f) * 100f)}%"
+                : string.Empty;
+            infoText.text = $"{selectedBuilding.DisplayName}\n生命：{selectedBuilding.HitPoints}/{selectedBuilding.MaxHitPoints}{garrisonStatus}\n{selectedBuilding.Description}";
         }
         else if (selectedUnits.Count == 1)
         {
@@ -366,7 +381,11 @@ internal sealed class RtsGameUIController
         }
         else
         {
-            infoText.text = buildMode == BuildingType.Factory ? "右键在有效格建造兵厂" : "未选中对象";
+            infoText.text = buildMode == BuildingType.Factory
+                ? "右键在有效格建造兵厂"
+                : buildMode == BuildingType.Garrison
+                    ? "右键在有效格建造驻防建筑"
+                    : "未选中对象";
         }
 
         overlayPanel.SetActive(paused || won || lost);
@@ -455,7 +474,9 @@ internal sealed class RtsGameUIController
                 ? new Color(1f, 0.22f, 0.2f, 1f)
                 : building.Type == BuildingType.Factory
                     ? new Color(0.2f, 0.95f, 0.4f, 1f)
-                    : new Color(0.25f, 0.6f, 1f, 1f);
+                    : building.Type == BuildingType.Garrison
+                        ? new Color(0.15f, 0.8f, 0.85f, 1f)
+                        : new Color(0.25f, 0.6f, 1f, 1f);
             color.a = lastKnown ? 0.48f : 1f;
             UpdateMinimapMarker(
                 building,
@@ -470,7 +491,7 @@ internal sealed class RtsGameUIController
 
         foreach (UnitData unit in units)
         {
-            if (unit == null)
+            if (unit == null || unit.GarrisonBuilding != null)
             {
                 continue;
             }
@@ -585,7 +606,9 @@ internal sealed class RtsGameUIController
         {
             return building.Type == BuildingType.Base
                 ? "PlayerBaseMapDot"
-                : "PlayerFactoryMapDot";
+                : building.Type == BuildingType.Garrison
+                    ? "PlayerGarrisonMapDot"
+                    : "PlayerFactoryMapDot";
         }
 
         return lastKnown ? "LastKnownEnemyBuildingMapDot" : "EnemyBuildingMapDot";
@@ -699,6 +722,11 @@ internal sealed class RtsGameUIController
 
         foreach (UnitData unit in units)
         {
+            if (unit.GarrisonBuilding != null)
+            {
+                continue;
+            }
+
             if (unit.Team == Team.Enemy &&
                 (isWorldVisible == null || !isWorldVisible(unit.Position)))
             {

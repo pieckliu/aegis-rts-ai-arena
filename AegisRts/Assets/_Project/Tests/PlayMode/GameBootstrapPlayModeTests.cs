@@ -137,6 +137,69 @@ public sealed class GameBootstrapPlayModeTests
         );
         Assert.IsFalse(productionProgress.activeSelf, "Production progress should hide when the queue is empty.");
 
+        Assert.IsNotNull(GameObject.Find("BuildGarrison"));
+        ArenaActionResult buildGarrisonResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "BuildGarrison",
+                CellX = playerBaseObservation.CellX - 3,
+                CellY = playerBaseObservation.CellY + 3
+            }
+        );
+        Assert.IsTrue(buildGarrisonResult.Accepted, buildGarrisonResult.Message);
+        ArenaEntityObservation garrisonObservation = bootstrap
+            .GetArenaObservation()
+            .Buildings
+            .First(building => building.Kind == BuildingType.Garrison.ToString());
+        Assert.AreEqual(config.GarrisonCapacity, garrisonObservation.GarrisonCapacity);
+        Assert.AreEqual(
+            config.GarrisonDamageMultiplier,
+            garrisonObservation.GarrisonDamageMultiplier
+        );
+        ArenaEntityObservation infantryObservation = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Kind == UnitType.Infantry.ToString());
+        ArenaActionResult garrisonResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "Garrison",
+                UnitIds = new[] { infantryObservation.Id },
+                TargetId = garrisonObservation.Id
+            }
+        );
+        Assert.IsTrue(garrisonResult.Accepted, garrisonResult.Message);
+        yield return new WaitForSeconds(2f);
+        yield return null;
+
+        infantryObservation = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Id == infantryObservation.Id);
+        Assert.AreEqual(garrisonObservation.Id, infantryObservation.GarrisonBuildingId);
+        Assert.IsFalse(infantry.activeSelf);
+        Assert.IsNotNull(
+            ui.GetComponentsInChildren<Button>(true)
+                .First(button => button.name == "EvacuateGarrison")
+        );
+
+        ArenaActionResult evacuateResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "EvacuateGarrison",
+                TargetId = garrisonObservation.Id
+            }
+        );
+        Assert.IsTrue(evacuateResult.Accepted, evacuateResult.Message);
+        yield return null;
+        Assert.AreEqual(
+            0,
+            bootstrap.GetArenaObservation().Units
+                .First(unit => unit.Id == infantryObservation.Id)
+                .GarrisonBuildingId
+        );
+        Assert.IsTrue(infantry.activeSelf);
+
         GameObject artilleryButton = GameObject.Find("TrainArtillery");
         Assert.IsNotNull(artilleryButton);
         ArenaActionResult artilleryResult = bootstrap.ExecuteArenaAction(new ArenaAction

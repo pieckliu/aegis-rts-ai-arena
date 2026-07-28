@@ -13,6 +13,10 @@ public sealed class RtsGameConfig : ScriptableObject
     public float BuildRadius = 7f;
     public float BuildingRadius = 1.05f;
     public int FactoryFootprintRadius = 1;
+    public int GarrisonFootprintRadius = 1;
+    public int GarrisonHitPoints = 350;
+    public int GarrisonCapacity = 4;
+    public float GarrisonDamageMultiplier = 1.5f;
     public float InfantryTrainingTime = 3f;
     public float ArtilleryTrainingTime = 6f;
     public int MaxFactoryQueueSize = 5;
@@ -44,6 +48,7 @@ public sealed class RtsGameConfig : ScriptableObject
     [Header("Economy")]
     public int StartingResources = 500;
     public int FactoryCost = 150;
+    public int GarrisonCost = 120;
     public int InfantryCost = 50;
     public int ArtilleryCost = 120;
     public int PassiveResourceIncome = 10;
@@ -76,6 +81,10 @@ public sealed class RtsGameConfig : ScriptableObject
             BaseFootprintRadius >= 0 &&
             BuildingRadius > 0f &&
             FactoryFootprintRadius >= 0 &&
+            GarrisonFootprintRadius >= 0 &&
+            GarrisonHitPoints > 0 &&
+            GarrisonCapacity > 0 &&
+            GarrisonDamageMultiplier >= 1f &&
             InfantryTrainingTime > 0f &&
             ArtilleryTrainingTime > 0f &&
             MaxFactoryQueueSize > 0 &&
@@ -92,6 +101,7 @@ public sealed class RtsGameConfig : ScriptableObject
             PlayerArtilleryHitPoints > 0 &&
             StartingResources >= 0 &&
             FactoryCost >= 0 &&
+            GarrisonCost >= 0 &&
             InfantryCost >= 0 &&
             ArtilleryCost >= 0 &&
             PassiveResourceInterval > 0f &&

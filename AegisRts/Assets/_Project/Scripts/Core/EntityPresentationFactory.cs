@@ -185,6 +185,8 @@ internal sealed class EntityPresentationFactory : IDisposable
                 return catalog.EnemyBasePrefab;
             case PresentationEntityKind.Factory:
                 return catalog.FactoryPrefab;
+            case PresentationEntityKind.Garrison:
+                return catalog.GarrisonPrefab;
             case PresentationEntityKind.PlayerInfantry:
                 return catalog.PlayerInfantryPrefab;
             case PresentationEntityKind.PlayerArtillery:

@@ -66,6 +66,10 @@ public sealed class RtsGameConfigTests
         Assert.AreEqual(0f, config.InitialCameraInwardBias);
         Assert.AreEqual(1, config.BaseFootprintRadius);
         Assert.AreEqual(1, config.FactoryFootprintRadius);
+        Assert.AreEqual(1, config.GarrisonFootprintRadius);
+        Assert.AreEqual(4, config.GarrisonCapacity);
+        Assert.Greater(config.GarrisonDamageMultiplier, 1f);
+        Assert.Greater(config.GarrisonCost, 0);
         Assert.Greater(config.ArtilleryAttackRange, config.InfantryAttackRange);
         Assert.Greater(config.ArtilleryCost, config.InfantryCost);
         Assert.Less(config.ArtilleryMoveSpeed, config.UnitMoveSpeed);

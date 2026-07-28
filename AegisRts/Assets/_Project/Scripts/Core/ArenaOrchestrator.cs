@@ -18,7 +18,10 @@ internal sealed class ArenaOrchestrator
     private readonly Func<BuildingData, bool> trainInfantry;
     private readonly Func<BuildingData, bool> trainArtillery;
     private readonly Action<List<UnitData>, bool> setArtilleryDeployment;
+    private readonly Func<List<UnitData>, BuildingData, int> garrisonUnits;
+    private readonly Action<BuildingData> evacuateGarrison;
     private readonly Func<Vector2Int, bool> buildFactory;
+    private readonly Func<Vector2Int, bool> buildGarrison;
 
     public ArenaOrchestrator(
         RtsGameConfig gameConfig,
@@ -35,7 +38,10 @@ internal sealed class ArenaOrchestrator
         Func<BuildingData, bool> trainInfantryAction,
         Func<BuildingData, bool> trainArtilleryAction,
         Action<List<UnitData>, bool> deploymentAction,
-        Func<Vector2Int, bool> build
+        Func<List<UnitData>, BuildingData, int> garrisonAction,
+        Action<BuildingData> evacuationAction,
+        Func<Vector2Int, bool> build,
+        Func<Vector2Int, bool> buildGarrisonAction
     )
     {
         config = gameConfig;
@@ -52,7 +58,10 @@ internal sealed class ArenaOrchestrator
         trainInfantry = trainInfantryAction;
         trainArtillery = trainArtilleryAction;
         setArtilleryDeployment = deploymentAction;
+        garrisonUnits = garrisonAction;
+        evacuateGarrison = evacuationAction;
         buildFactory = build;
+        buildGarrison = buildGarrisonAction;
     }
 
     public ArenaObservation GetObservation()
@@ -80,7 +89,10 @@ internal sealed class ArenaOrchestrator
                 building.ProductionQueueCount > 0
                     ? building.CurrentProductionType.ToString()
                     : string.Empty,
-                building.OccupiedCells
+                building.OccupiedCells,
+                garrisonCount: building.GarrisonedUnits.Count,
+                garrisonCapacity: building.GarrisonCapacity,
+                garrisonDamageMultiplier: building.GarrisonDamageMultiplier
             ));
         }
 
@@ -94,7 +106,8 @@ internal sealed class ArenaOrchestrator
                 unit.Cell,
                 unit.HitPoints,
                 unit.MaxHitPoints,
-                isDeployed: unit.IsDeployed
+                isDeployed: unit.IsDeployed,
+                garrisonBuildingId: unit.GarrisonBuilding?.Id ?? 0
             ));
         }
 
@@ -225,6 +238,52 @@ internal sealed class ArenaOrchestrator
                 : ArenaActionResult.Reject("Factory cannot be built at that cell.");
         }
 
+        if (action.Type == "BuildGarrison")
+        {
+            return buildGarrison(new Vector2Int(action.CellX, action.CellY))
+                ? ArenaActionResult.Success("Garrison construction accepted.")
+                : ArenaActionResult.Reject("Garrison cannot be built at that cell.");
+        }
+
+        if (action.Type == "Garrison")
+        {
+            List<UnitData> actors = FindPlayerUnits(action.UnitIds);
+            actors.RemoveAll(unit => unit.Type != UnitType.Infantry);
+
+            foreach (BuildingData building in buildings)
+            {
+                if (building.Id == action.TargetId &&
+                    building.Team == Team.Player &&
+                    building.Type == BuildingType.Garrison)
+                {
+                    int orderedCount = garrisonUnits(actors, building);
+                    return orderedCount > 0
+                        ? ArenaActionResult.Success("Garrison command accepted.")
+                        : ArenaActionResult.Reject(
+                            "No infantry could enter this garrison."
+                        );
+                }
+            }
+
+            return ArenaActionResult.Reject("Player garrison was not found.");
+        }
+
+        if (action.Type == "EvacuateGarrison")
+        {
+            foreach (BuildingData building in buildings)
+            {
+                if (building.Id == action.TargetId &&
+                    building.Team == Team.Player &&
+                    building.Type == BuildingType.Garrison)
+                {
+                    evacuateGarrison(building);
+                    return ArenaActionResult.Success("Garrison evacuation accepted.");
+                }
+            }
+
+            return ArenaActionResult.Reject("Player garrison was not found.");
+        }
+
         return ArenaActionResult.Reject("Unknown action type.");
     }
 
@@ -241,7 +300,10 @@ internal sealed class ArenaOrchestrator
         {
             foreach (UnitData unit in units)
             {
-                if (unit.Id == id && unit.Team == Team.Player && !result.Contains(unit))
+                if (unit.Id == id &&
+                    unit.Team == Team.Player &&
+                    unit.GarrisonBuilding == null &&
+                    !result.Contains(unit))
                 {
                     result.Add(unit);
                     break;
@@ -271,7 +333,11 @@ internal sealed class ArenaOrchestrator
         float productionProgress = 0f,
         string productionKind = "",
         IList<Vector2Int> occupiedCells = null,
-        bool isDeployed = false
+        bool isDeployed = false,
+        int garrisonCount = 0,
+        int garrisonCapacity = 0,
+        float garrisonDamageMultiplier = 1f,
+        int garrisonBuildingId = 0
     )
     {
         ArenaCellObservation[] footprint = null;
@@ -305,7 +371,11 @@ internal sealed class ArenaOrchestrator
             ProductionKind = productionKind,
             ProductionProgress = productionProgress,
             OccupiedCells = footprint,
-            IsDeployed = isDeployed
+            IsDeployed = isDeployed,
+            GarrisonCount = garrisonCount,
+            GarrisonCapacity = garrisonCapacity,
+            GarrisonDamageMultiplier = garrisonDamageMultiplier,
+            GarrisonBuildingId = garrisonBuildingId
         };
     }
 }
