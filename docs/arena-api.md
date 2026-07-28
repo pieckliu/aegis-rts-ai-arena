@@ -11,7 +11,8 @@ The snapshot contains:
 - match time, player resources, terminal state, and result;
 - every building and unit with a stable match-local ID;
 - entity kind, team, world position, grid cell, and health;
-- factory queue count and current production progress.
+- each building's exact occupied grid cells;
+- factory queue count, current production kind, and production progress.
 
 ## Actions
 
@@ -22,13 +23,17 @@ Supported action types:
 - `Move`: set `UnitIds`, `CellX`, and `CellY`;
 - `Attack`: set `UnitIds` and `TargetId`;
 - `BuildFactory`: set `CellX` and `CellY`;
-- `TrainInfantry`: no additional fields are required.
+- `TrainInfantry`: no additional fields are required;
+- `TrainArtillery`: no additional fields are required.
 
 Every call returns an `ArenaActionResult` with `Accepted` and `Message`.
 
 Actions are rejected while the match is paused, terminal, or outside the playing state. The API uses the same validation and command paths as human input so agent matches follow normal game rules.
 
-Human-controlled units use grid pathfinding for movement orders. Occupied building and destination cells are treated as blocked, while each member of a selected group receives its own destination.
+Human-controlled units use grid pathfinding for movement orders. Every cell in a building's
+3×3 footprint is blocked, while each member of a selected group receives its own destination.
+Artillery moves more slowly than infantry, attacks from long range, and deals bonus damage to
+buildings.
 
 ## Next bridge
 

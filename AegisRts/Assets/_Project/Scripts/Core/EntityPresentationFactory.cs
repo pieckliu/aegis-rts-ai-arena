@@ -187,6 +187,8 @@ internal sealed class EntityPresentationFactory : IDisposable
                 return catalog.FactoryPrefab;
             case PresentationEntityKind.PlayerInfantry:
                 return catalog.PlayerInfantryPrefab;
+            case PresentationEntityKind.PlayerArtillery:
+                return catalog.PlayerInfantryPrefab;
             case PresentationEntityKind.EnemyInfantry:
                 return catalog.EnemyInfantryPrefab;
             default:

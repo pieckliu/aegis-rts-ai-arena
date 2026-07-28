@@ -10,12 +10,14 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float cellSize = 1f;
 
     [Header("Base Settings")]
-    [SerializeField] private float baseRadius = 0.45f;
+    [SerializeField] private float baseRadius = 1.25f;
+    [SerializeField] private int baseFootprintRadius = 1;
     [SerializeField] private float buildRadius = 7f;
 
     [Header("Building Settings")]
-    [SerializeField] private float buildingRadius = 0.42f;
+    [SerializeField] private float buildingRadius = 1.05f;
     [SerializeField] private float infantryTrainingTime = 3f;
+    [SerializeField] private float artilleryTrainingTime = 6f;
     [SerializeField] private int maxFactoryQueueSize = 5;
 
     [Header("Health Settings")]
@@ -28,6 +30,11 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private float infantryAttackRange = 1.2f;
     [SerializeField] private float infantryAttackCooldown = 1f;
     [SerializeField] private int playerInfantryHitPoints = 100;
+    [SerializeField] private int artilleryAttackDamage = 45;
+    [SerializeField] private float artilleryAttackRange = 6f;
+    [SerializeField] private float artilleryAttackCooldown = 2.4f;
+    [SerializeField] private float artilleryBuildingDamageMultiplier = 1.75f;
+    [SerializeField] private int playerArtilleryHitPoints = 70;
     [SerializeField] private int enemyInfantryHitPoints = 80;
     [SerializeField] private float unitAggroRange = 4f;
 
@@ -40,11 +47,14 @@ public class GameBootstrap : MonoBehaviour
     [SerializeField] private int startingResources = 500;
     [SerializeField] private int factoryCost = 150;
     [SerializeField] private int infantryCost = 50;
+    [SerializeField] private int artilleryCost = 120;
     [SerializeField] private int passiveResourceIncome = 10;
     [SerializeField] private float passiveResourceInterval = 5f;
 
     [Header("Unit Settings")]
     [SerializeField] private float infantryRadius = 0.42f;
+    [SerializeField] private float artilleryRadius = 0.52f;
+    [SerializeField] private float artilleryMoveSpeed = 2.6f;
 
     [Header("Camera Settings")]
     [SerializeField] private float cameraMoveSpeed = 14f;
@@ -142,6 +152,7 @@ public class GameBootstrap : MonoBehaviour
             CommandAttackUnit,
             CommandAttackBuilding,
             TryTrainInfantry,
+            TryTrainArtillery,
             TryBuildFactoryAtCell
         );
         lifecycle = new RtsEntityLifecycle(
@@ -165,6 +176,7 @@ public class GameBootstrap : MonoBehaviour
             SelectFactory,
             CancelBuildMode,
             TrainSelectedFactory,
+            TrainSelectedFactoryArtillery,
             ResumeGame,
             RestartGame,
             ReturnToMainMenu,
@@ -201,9 +213,11 @@ public class GameBootstrap : MonoBehaviour
         mapSize = gameConfig.MapSize;
         cellSize = gameConfig.CellSize;
         baseRadius = gameConfig.BaseRadius;
+        baseFootprintRadius = gameConfig.BaseFootprintRadius;
         buildRadius = gameConfig.BuildRadius;
         buildingRadius = gameConfig.BuildingRadius;
         infantryTrainingTime = gameConfig.InfantryTrainingTime;
+        artilleryTrainingTime = gameConfig.ArtilleryTrainingTime;
         maxFactoryQueueSize = gameConfig.MaxFactoryQueueSize;
         playerBaseHitPoints = gameConfig.PlayerBaseHitPoints;
         factoryHitPoints = gameConfig.FactoryHitPoints;
@@ -212,6 +226,11 @@ public class GameBootstrap : MonoBehaviour
         infantryAttackRange = gameConfig.InfantryAttackRange;
         infantryAttackCooldown = gameConfig.InfantryAttackCooldown;
         playerInfantryHitPoints = gameConfig.PlayerInfantryHitPoints;
+        artilleryAttackDamage = gameConfig.ArtilleryAttackDamage;
+        artilleryAttackRange = gameConfig.ArtilleryAttackRange;
+        artilleryAttackCooldown = gameConfig.ArtilleryAttackCooldown;
+        artilleryBuildingDamageMultiplier = gameConfig.ArtilleryBuildingDamageMultiplier;
+        playerArtilleryHitPoints = gameConfig.PlayerArtilleryHitPoints;
         enemyInfantryHitPoints = gameConfig.EnemyInfantryHitPoints;
         unitAggroRange = gameConfig.UnitAggroRange;
         enemyInfantryAttackDamage = gameConfig.EnemyInfantryAttackDamage;
@@ -220,9 +239,12 @@ public class GameBootstrap : MonoBehaviour
         startingResources = gameConfig.StartingResources;
         factoryCost = gameConfig.FactoryCost;
         infantryCost = gameConfig.InfantryCost;
+        artilleryCost = gameConfig.ArtilleryCost;
         passiveResourceIncome = gameConfig.PassiveResourceIncome;
         passiveResourceInterval = gameConfig.PassiveResourceInterval;
         infantryRadius = gameConfig.InfantryRadius;
+        artilleryRadius = gameConfig.ArtilleryRadius;
+        artilleryMoveSpeed = gameConfig.ArtilleryMoveSpeed;
         cameraMoveSpeed = gameConfig.CameraMoveSpeed;
         cameraZoomSpeed = gameConfig.CameraZoomSpeed;
         minCameraSize = gameConfig.MinCameraSize;
@@ -265,7 +287,7 @@ public class GameBootstrap : MonoBehaviour
         matchTime += Time.deltaTime;
         cameraController.Tick(Time.deltaTime);
         economy.TickIncome(Time.deltaTime);
-        economy.TickProduction(Time.deltaTime, buildings, TrySpawnPlayerInfantry);
+        economy.TickProduction(Time.deltaTime, buildings, TrySpawnPlayerUnit);
         selectionInput.TickSelection(
             selectedBuilding == BuildingType.None,
             IsPointerOverUI,
@@ -445,12 +467,16 @@ public class GameBootstrap : MonoBehaviour
         float half = gridMap.HalfSize;
 
         basePosition = new Vector2(
-            half - cellSize * 2.5f,
-            half - cellSize * 2.5f
+            half - cellSize * 5f,   //已修改基地的位置坐标
+            half - cellSize * 5f
         );
 
         Vector2Int baseCell = gridMap.WorldToCell(basePosition);
-        gridMap.TryOccupy(baseCell);
+        List<Vector2Int> baseFootprint = gridMap.GetSquareFootprint(
+            baseCell,
+            baseFootprintRadius
+        );
+        gridMap.TryOccupy(baseFootprint);
 
         baseObject = presentation.CreateLabeledCircle(
             PresentationEntityKind.PlayerBase,
@@ -473,7 +499,8 @@ public class GameBootstrap : MonoBehaviour
             baseRadius,
             "主基地：后续用于建造建筑和管理资源。",
             Team.Player,
-            playerBaseHitPoints
+            playerBaseHitPoints,
+            baseFootprint
         );
 
         buildings.Add(playerBaseData);
@@ -492,7 +519,11 @@ public class GameBootstrap : MonoBehaviour
         );
 
         Vector2Int enemyBaseCell = gridMap.WorldToCell(enemyBasePosition);
-        gridMap.TryOccupy(enemyBaseCell);
+        List<Vector2Int> enemyBaseFootprint = gridMap.GetSquareFootprint(
+            enemyBaseCell,
+            baseFootprintRadius
+        );
+        gridMap.TryOccupy(enemyBaseFootprint);
 
         GameObject enemyBaseObject = presentation.CreateLabeledCircle(
             PresentationEntityKind.EnemyBase,
@@ -515,7 +546,8 @@ public class GameBootstrap : MonoBehaviour
             baseRadius,
             "敌方 AI 基地：摧毁它即可获得胜利。",
             Team.Enemy,
-            enemyBaseHitPoints
+            enemyBaseHitPoints,
+            enemyBaseFootprint
         );
 
         buildings.Add(enemyBaseData);
@@ -1063,8 +1095,10 @@ public class GameBootstrap : MonoBehaviour
             economy.Resources,
             factoryCost,
             infantryCost,
+            artilleryCost,
             maxFactoryQueueSize,
             infantryTrainingTime,
+            artilleryTrainingTime,
             selectedBuilding,
             selectedBuildingData,
             selectedUnits,
@@ -1094,6 +1128,11 @@ public class GameBootstrap : MonoBehaviour
     private void TrainSelectedFactory()
     {
         TryTrainInfantry(selectedBuildingData);
+    }
+
+    private void TrainSelectedFactoryArtillery()
+    {
+        TryTrainArtillery(selectedBuildingData);
     }
 
     private void PlayCombatFeedback(CombatFeedbackEvent combatFeedback)
@@ -1253,9 +1292,10 @@ public class GameBootstrap : MonoBehaviour
             position,
             cell,
             buildingRadius,
-            "兵厂：后续用于生产步兵、载具等单位。",
+            "兵厂：占据 3×3 网格，使用共享队列生产步兵和火炮。",
             Team.Player,
-            factoryHitPoints
+            factoryHitPoints,
+            placement.GetFootprint(BuildingType.Factory, cell)
         );
         factory.Id = nextEntityId++;
         buildings.Add(factory);
@@ -1273,7 +1313,7 @@ public class GameBootstrap : MonoBehaviour
             return false;
         }
 
-        if (factory.InfantryQueue >= maxFactoryQueueSize)
+        if (factory.ProductionQueueCount >= maxFactoryQueueSize)
         {
             ui.ShowNotification("生产队列已满", true);
             return false;
@@ -1291,18 +1331,56 @@ public class GameBootstrap : MonoBehaviour
             return false;
         }
 
-        ui.ShowNotification($"步兵已加入生产队列（{factory.InfantryQueue}/{maxFactoryQueueSize}）");
+        ui.ShowNotification($"步兵已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
         return true;
     }
 
-    private bool TrySpawnPlayerInfantry(BuildingData factory)
+    private bool TryTrainArtillery(BuildingData factory)
+    {
+        if (factory == null || factory.Type != BuildingType.Factory)
+        {
+            ui.ShowNotification("请先选择一座兵厂", true);
+            return false;
+        }
+
+        if (factory.ProductionQueueCount >= maxFactoryQueueSize)
+        {
+            ui.ShowNotification("生产队列已满", true);
+            return false;
+        }
+
+        if (!economy.CanAfford(artilleryCost))
+        {
+            ui.ShowNotification($"资源不足：生产火炮需要 {artilleryCost}", true);
+            return false;
+        }
+
+        if (!economy.TryQueueArtillery(factory))
+        {
+            ui.ShowNotification("火炮生产请求未被接受", true);
+            return false;
+        }
+
+        ui.ShowNotification($"火炮已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
+        return true;
+    }
+
+    private bool TrySpawnPlayerUnit(BuildingData factory, UnitType unitType)
     {
         if (!gridMap.TryFindOpenCellNear(factory.Cell, out Vector2Int spawnCell))
         {
             return false;
         }
 
-        SpawnPlayerInfantry(spawnCell);
+        if (unitType == UnitType.Artillery)
+        {
+            SpawnPlayerArtillery(spawnCell);
+        }
+        else
+        {
+            SpawnPlayerInfantry(spawnCell);
+        }
+
         return true;
     }
 
@@ -1342,6 +1420,46 @@ public class GameBootstrap : MonoBehaviour
         units.Add(infantry);
 
         Debug.Log($"Infantry trained at cell {spawnCell}.");
+    }
+
+    private void SpawnPlayerArtillery(Vector2Int spawnCell)
+    {
+        Vector2 spawnPosition = gridMap.CellToWorld(spawnCell);
+
+        GameObject artilleryObject = presentation.CreateLabeledCircle(
+            PresentationEntityKind.PlayerArtillery,
+            "Artillery",
+            spawnPosition,
+            artilleryRadius,
+            new Color(0.8f, 0.35f, 1f, 1f),
+            25,
+            buildingRoot,
+            string.Empty,
+            Color.black
+        );
+
+        UnitData artillery = new UnitData(
+            "火炮",
+            UnitType.Artillery,
+            artilleryObject,
+            spawnPosition,
+            spawnCell,
+            artilleryRadius,
+            "火炮：远程攻城单位。移动缓慢、生命较低，但射程远并对建筑造成额外伤害。",
+            Team.Player,
+            playerArtilleryHitPoints,
+            artilleryAttackDamage,
+            artilleryAttackRange,
+            artilleryAttackCooldown,
+            artilleryMoveSpeed,
+            artilleryBuildingDamageMultiplier
+        );
+
+        gridMap.TryOccupy(spawnCell);
+        artillery.Id = nextEntityId++;
+        units.Add(artillery);
+
+        Debug.Log($"Artillery trained at cell {spawnCell}.");
     }
 
     private Vector2 GetMouseWorldPosition()

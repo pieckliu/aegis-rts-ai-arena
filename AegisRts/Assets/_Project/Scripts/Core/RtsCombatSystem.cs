@@ -94,7 +94,8 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) > attacker.AttackRange)
+        if (Vector2.Distance(attacker.Position, target.Position) >
+            attacker.AttackRange + attacker.Radius + target.Radius)
         {
             moveTowards(attacker, target.Position);
             return;
@@ -108,8 +109,15 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-        PublishFeedback(attacker, target.Position, target.GameObject, target.HitPoints <= 0);
+        int damage = attacker.AttackDamage;
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
+        PublishFeedback(
+            attacker,
+            target.Position,
+            target.GameObject,
+            damage,
+            target.HitPoints <= 0
+        );
 
         if (target.HitPoints <= 0)
         {
@@ -128,7 +136,8 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) > attacker.AttackRange)
+        if (Vector2.Distance(attacker.Position, target.Position) >
+            attacker.AttackRange + attacker.Radius + target.Radius)
         {
             moveTowards(attacker, target.Position);
             return;
@@ -142,8 +151,17 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-        PublishFeedback(attacker, target.Position, target.GameObject, target.HitPoints <= 0);
+        int damage = Mathf.RoundToInt(
+            attacker.AttackDamage * attacker.BuildingDamageMultiplier
+        );
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
+        PublishFeedback(
+            attacker,
+            target.Position,
+            target.GameObject,
+            damage,
+            target.HitPoints <= 0
+        );
 
         if (target.HitPoints <= 0)
         {
@@ -156,6 +174,7 @@ internal sealed class RtsCombatSystem
         UnitData attacker,
         Vector2 targetPosition,
         GameObject targetObject,
+        int damage,
         bool isLethal
     )
     {
@@ -165,7 +184,7 @@ internal sealed class RtsCombatSystem
             attacker.GameObject,
             targetObject,
             attacker.Team,
-            attacker.AttackDamage,
+            damage,
             isLethal
         ));
     }

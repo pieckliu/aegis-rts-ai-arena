@@ -91,8 +91,8 @@ public sealed class GameBootstrapPlayModeTests
         ArenaActionResult buildResult = bootstrap.ExecuteArenaAction(new ArenaAction
         {
             Type = "BuildFactory",
-            CellX = playerBaseObservation.CellX - 1,
-            CellY = playerBaseObservation.CellY
+            CellX = playerBaseObservation.CellX - 3,
+            CellY = playerBaseObservation.CellY - 3
         });
         ArenaActionResult trainResult = bootstrap.ExecuteArenaAction(new ArenaAction
         {
@@ -101,6 +101,15 @@ public sealed class GameBootstrapPlayModeTests
 
         Assert.IsTrue(buildResult.Accepted, buildResult.Message);
         Assert.IsTrue(trainResult.Accepted, trainResult.Message);
+        ArenaEntityObservation factoryObservation = bootstrap
+            .GetArenaObservation()
+            .Buildings
+            .First(building => building.Kind == BuildingType.Factory.ToString());
+        Assert.AreEqual(
+            9,
+            factoryObservation.OccupiedCells.Length,
+            "A factory should reserve its full 3x3 footprint."
+        );
         yield return null;
 
         GameObject notification = GameObject.Find("Notification");
@@ -127,6 +136,26 @@ public sealed class GameBootstrapPlayModeTests
             "Undamaged and unselected symbolic units should not add UI clutter."
         );
         Assert.IsFalse(productionProgress.activeSelf, "Production progress should hide when the queue is empty.");
+
+        GameObject artilleryButton = GameObject.Find("TrainArtillery");
+        Assert.IsNotNull(artilleryButton);
+        ArenaActionResult artilleryResult = bootstrap.ExecuteArenaAction(new ArenaAction
+        {
+            Type = "TrainArtillery"
+        });
+        Assert.IsTrue(artilleryResult.Accepted, artilleryResult.Message);
+        yield return new WaitForSeconds(6.2f);
+        yield return null;
+
+        GameObject artillery = GameObject.Find("Artillery");
+        Assert.IsNotNull(artillery, "The shared factory queue should produce artillery.");
+        Assert.AreEqual(
+            UnitType.Artillery.ToString(),
+            bootstrap.GetArenaObservation().Units
+                .First(unit => unit.Kind == UnitType.Artillery.ToString())
+                .Kind
+        );
+        Assert.IsNotNull(GameObject.Find("PlayerArtilleryMapDot"));
 
         GameObject playerUnitMapDot = GameObject.Find("PlayerUnitMapDot");
         Assert.IsNotNull(playerUnitMapDot);

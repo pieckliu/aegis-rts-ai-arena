@@ -8,10 +8,13 @@ public sealed class RtsGameConfig : ScriptableObject
     public float CellSize = 1f;
 
     [Header("Buildings")]
-    public float BaseRadius = 0.45f;
+    public float BaseRadius = 1.25f;
+    public int BaseFootprintRadius = 1;
     public float BuildRadius = 7f;
-    public float BuildingRadius = 0.42f;
+    public float BuildingRadius = 1.05f;
+    public int FactoryFootprintRadius = 1;
     public float InfantryTrainingTime = 3f;
+    public float ArtilleryTrainingTime = 6f;
     public int MaxFactoryQueueSize = 5;
     public int PlayerBaseHitPoints = 500;
     public int FactoryHitPoints = 300;
@@ -22,6 +25,13 @@ public sealed class RtsGameConfig : ScriptableObject
     public float InfantryAttackRange = 1.2f;
     public float InfantryAttackCooldown = 1f;
     public int PlayerInfantryHitPoints = 100;
+
+    [Header("Player Artillery")]
+    public int ArtilleryAttackDamage = 45;
+    public float ArtilleryAttackRange = 6f;
+    public float ArtilleryAttackCooldown = 2.4f;
+    public float ArtilleryBuildingDamageMultiplier = 1.75f;
+    public int PlayerArtilleryHitPoints = 70;
 
     [Header("Enemy AI")]
     public int EnemyInfantryHitPoints = 80;
@@ -35,13 +45,16 @@ public sealed class RtsGameConfig : ScriptableObject
     public int StartingResources = 500;
     public int FactoryCost = 150;
     public int InfantryCost = 50;
+    public int ArtilleryCost = 120;
     public int PassiveResourceIncome = 10;
     public float PassiveResourceInterval = 5f;
 
     [Header("Movement and Camera")]
     public float InfantryRadius = 0.42f;
+    public float ArtilleryRadius = 0.52f;
     public float UnitCollisionPadding = 0.04f;
     public float UnitMoveSpeed = 5f;
+    public float ArtilleryMoveSpeed = 2.6f;
     public float CameraMoveSpeed = 14f;
     public float CameraZoomSpeed = 3f;
     public float MinCameraSize = 6f;
@@ -59,19 +72,34 @@ public sealed class RtsGameConfig : ScriptableObject
     {
         return MapSize > 0 &&
             CellSize > 0f &&
+            BaseRadius > 0f &&
+            BaseFootprintRadius >= 0 &&
+            BuildingRadius > 0f &&
+            FactoryFootprintRadius >= 0 &&
             InfantryTrainingTime > 0f &&
+            ArtilleryTrainingTime > 0f &&
             MaxFactoryQueueSize > 0 &&
             PlayerBaseHitPoints > 0 &&
+            FactoryHitPoints > 0 &&
             EnemyBaseHitPoints > 0 &&
             InfantryAttackDamage >= 0 &&
             InfantryAttackRange > 0f &&
             InfantryAttackCooldown > 0f &&
+            ArtilleryAttackDamage >= 0 &&
+            ArtilleryAttackRange > 0f &&
+            ArtilleryAttackCooldown > 0f &&
+            ArtilleryBuildingDamageMultiplier >= 1f &&
+            PlayerArtilleryHitPoints > 0 &&
             StartingResources >= 0 &&
             FactoryCost >= 0 &&
             InfantryCost >= 0 &&
+            ArtilleryCost >= 0 &&
             PassiveResourceInterval > 0f &&
+            InfantryRadius > 0f &&
+            ArtilleryRadius > 0f &&
             UnitCollisionPadding >= 0f &&
             UnitMoveSpeed > 0f &&
+            ArtilleryMoveSpeed > 0f &&
             MinCameraSize > 0f &&
             InitialCameraSize >= MinCameraSize &&
             InitialCameraSize <= MaxCameraSize &&

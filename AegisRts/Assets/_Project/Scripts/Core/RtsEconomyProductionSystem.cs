@@ -51,27 +51,39 @@ internal sealed class RtsEconomyProductionSystem
 
     public bool TryQueueInfantry(BuildingData factory)
     {
+        return TryQueueUnit(factory, UnitType.Infantry);
+    }
+
+    public bool TryQueueArtillery(BuildingData factory)
+    {
+        return TryQueueUnit(factory, UnitType.Artillery);
+    }
+
+    public bool TryQueueUnit(BuildingData factory, UnitType unitType)
+    {
         if (factory == null || factory.Type != BuildingType.Factory)
         {
             return false;
         }
 
+        int cost = GetUnitCost(unitType);
+
         if (!ArenaGameRules.CanQueue(
-                factory.InfantryQueue,
+                factory.ProductionQueueCount,
                 config.MaxFactoryQueueSize,
                 Resources,
-                config.InfantryCost
+                cost
             ))
         {
             return false;
         }
 
-        TrySpend(config.InfantryCost);
-        factory.InfantryQueue++;
+        TrySpend(cost);
+        factory.ProductionQueue.Add(unitType);
 
-        if (factory.InfantryQueue == 1)
+        if (factory.ProductionQueueCount == 1)
         {
-            factory.ProductionTimer = config.InfantryTrainingTime;
+            factory.ProductionTimer = GetTrainingTime(unitType);
         }
 
         return true;
@@ -83,11 +95,25 @@ internal sealed class RtsEconomyProductionSystem
         Func<BuildingData, bool> trySpawnInfantry
     )
     {
+        TickProduction(
+            deltaTime,
+            buildings,
+            (factory, unitType) =>
+                unitType == UnitType.Infantry && trySpawnInfantry(factory)
+        );
+    }
+
+    public void TickProduction(
+        float deltaTime,
+        IList<BuildingData> buildings,
+        Func<BuildingData, UnitType, bool> trySpawnUnit
+    )
+    {
         foreach (BuildingData factory in buildings)
         {
             if (factory.Team != Team.Player ||
                 factory.Type != BuildingType.Factory ||
-                factory.InfantryQueue <= 0)
+                factory.ProductionQueueCount <= 0)
             {
                 continue;
             }
@@ -99,16 +125,32 @@ internal sealed class RtsEconomyProductionSystem
                 continue;
             }
 
-            if (!trySpawnInfantry(factory))
+            UnitType completedType = factory.CurrentProductionType;
+
+            if (!trySpawnUnit(factory, completedType))
             {
                 factory.ProductionTimer = 0.5f;
                 continue;
             }
 
-            factory.InfantryQueue--;
-            factory.ProductionTimer = factory.InfantryQueue > 0
-                ? config.InfantryTrainingTime
+            factory.ProductionQueue.RemoveAt(0);
+            factory.ProductionTimer = factory.ProductionQueueCount > 0
+                ? GetTrainingTime(factory.CurrentProductionType)
                 : 0f;
         }
+    }
+
+    public int GetUnitCost(UnitType unitType)
+    {
+        return unitType == UnitType.Artillery
+            ? config.ArtilleryCost
+            : config.InfantryCost;
+    }
+
+    public float GetTrainingTime(UnitType unitType)
+    {
+        return unitType == UnitType.Artillery
+            ? config.ArtilleryTrainingTime
+            : config.InfantryTrainingTime;
     }
 }

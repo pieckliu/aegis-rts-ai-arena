@@ -24,7 +24,16 @@ public sealed class ArenaEntityObservation
     public int HitPoints;
     public int MaxHitPoints;
     public int QueueCount;
+    public string ProductionKind;
     public float ProductionProgress;
+    public ArenaCellObservation[] OccupiedCells;
+}
+
+[Serializable]
+public sealed class ArenaCellObservation
+{
+    public int X;
+    public int Y;
 }
 
 [Serializable]

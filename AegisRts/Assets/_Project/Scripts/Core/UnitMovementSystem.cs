@@ -300,11 +300,21 @@ internal sealed class UnitMovementSystem
 
     public void MoveTowards(UnitData unit, Vector2 targetPosition, float deltaTime)
     {
+        RebuildCollisionObstacleCells();
         Vector2 nextPosition = Vector2.MoveTowards(
             unit.Position,
             targetPosition,
-            config.UnitMoveSpeed * deltaTime
+            GetMoveSpeed(unit) * deltaTime
         );
+
+        if (!IsPositionClear(
+                nextPosition,
+                unit.Radius,
+                collisionObstacleCells
+            ))
+        {
+            return;
+        }
 
         ApplyPosition(unit, nextPosition);
         SyncCombatCell(unit);
@@ -325,7 +335,7 @@ internal sealed class UnitMovementSystem
             Vector2 nextPosition = Vector2.MoveTowards(
                 unit.Position,
                 movementTarget,
-                config.UnitMoveSpeed * deltaTime
+                GetMoveSpeed(unit) * deltaTime
             );
 
             ApplyPosition(unit, nextPosition);
@@ -505,5 +515,12 @@ internal sealed class UnitMovementSystem
         }
 
         unit.Position = position;
+    }
+
+    private float GetMoveSpeed(UnitData unit)
+    {
+        return unit != null && unit.MoveSpeed > 0f
+            ? unit.MoveSpeed
+            : config.UnitMoveSpeed;
     }
 }

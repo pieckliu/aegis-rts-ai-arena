@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 internal sealed class BuildingPlacementSystem
 {
@@ -34,12 +35,14 @@ internal sealed class BuildingPlacementSystem
         Vector2Int cell
     )
     {
+        List<Vector2Int> footprint = GetFootprint(buildingType, cell);
+
         return buildingType == BuildingType.Factory &&
             gridMap.IsCellInside(cell) &&
             gridMap.IsWorldInside(worldPosition) &&
             CanAfford(buildingType) &&
             Vector2.Distance(playerBasePosition, worldPosition) <= config.BuildRadius &&
-            !gridMap.IsOccupied(cell);
+            gridMap.CanOccupy(footprint);
     }
 
     public bool TryReserve(
@@ -54,7 +57,9 @@ internal sealed class BuildingPlacementSystem
             return false;
         }
 
-        if (!gridMap.TryOccupy(cell))
+        List<Vector2Int> footprint = GetFootprint(buildingType, cell);
+
+        if (!gridMap.TryOccupy(footprint))
         {
             return false;
         }
@@ -64,7 +69,18 @@ internal sealed class BuildingPlacementSystem
             return true;
         }
 
-        gridMap.Release(cell);
+        gridMap.Release(footprint);
         return false;
+    }
+
+    public List<Vector2Int> GetFootprint(
+        BuildingType buildingType,
+        Vector2Int centerCell
+    )
+    {
+        int footprintRadius = buildingType == BuildingType.Factory
+            ? config.FactoryFootprintRadius
+            : config.BaseFootprintRadius;
+        return gridMap.GetSquareFootprint(centerCell, footprintRadius);
     }
 }

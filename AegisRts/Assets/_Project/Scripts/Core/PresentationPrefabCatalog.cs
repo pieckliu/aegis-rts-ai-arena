@@ -20,5 +20,6 @@ internal enum PresentationEntityKind
     EnemyBase,
     Factory,
     PlayerInfantry,
+    PlayerArtillery,
     EnemyInfantry
 }

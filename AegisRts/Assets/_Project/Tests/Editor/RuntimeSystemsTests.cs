@@ -261,7 +261,23 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
-    public void Placement_ReservesCellAndSpendsResourcesAtomically()
+    public void GridMap_FindsSpawnOutsideMultiCellBuildingFootprint()
+    {
+        GridMapService gridMap = new GridMapService(12, 1f);
+        Vector2Int center = new Vector2Int(6, 6);
+        List<Vector2Int> footprint = gridMap.GetSquareFootprint(center, 1);
+
+        Assert.IsTrue(gridMap.TryOccupy(footprint));
+        Assert.IsTrue(gridMap.TryFindOpenCellNear(center, out Vector2Int openCell));
+        Assert.IsFalse(footprint.Contains(openCell));
+        Assert.AreEqual(2, Mathf.Max(
+            Mathf.Abs(openCell.x - center.x),
+            Mathf.Abs(openCell.y - center.y)
+        ));
+    }
+
+    [Test]
+    public void Placement_ReservesFullBuildingFootprintAndSpendsResourcesAtomically()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
         GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
@@ -278,12 +294,18 @@ public sealed class RuntimeSystemsTests
             cell
         ));
         Assert.IsTrue(gridMap.IsOccupied(cell));
+        List<Vector2Int> footprint = placement.GetFootprint(
+            BuildingType.Factory,
+            cell
+        );
+        Assert.AreEqual(9, footprint.Count);
+        Assert.IsTrue(footprint.TrueForAll(gridMap.IsOccupied));
         Assert.AreEqual(config.StartingResources - config.FactoryCost, economy.Resources);
         Assert.IsFalse(placement.TryReserve(
             BuildingType.Factory,
             basePosition,
             worldPosition,
-            cell
+            cell + Vector2Int.right
         ));
         Assert.AreEqual(config.StartingResources - config.FactoryCost, economy.Resources);
 
@@ -405,6 +427,43 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void Movement_DetourDoesNotEnterMultiCellBuildingFootprint()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 12;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData unit = CreateUnitAt(gridMap, new Vector2Int(1, 5), "Detour");
+        List<Vector2Int> footprint = gridMap.GetSquareFootprint(
+            new Vector2Int(5, 5),
+            1
+        );
+        Assert.IsTrue(gridMap.TryOccupy(footprint));
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { unit }
+        );
+        Vector2Int targetCell = new Vector2Int(9, 5);
+
+        Assert.AreEqual(1, movement.CommandGroupMove(
+            new List<UnitData> { unit },
+            targetCell,
+            gridMap.CellToWorld(targetCell)
+        ));
+        Assert.Greater(unit.Waypoints.Count, 1);
+
+        foreach (Vector2 waypoint in unit.Waypoints)
+        {
+            Assert.IsFalse(
+                footprint.Contains(gridMap.WorldToCell(waypoint)),
+                "Pathfinding must keep every waypoint outside the building footprint."
+            );
+        }
+
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Movement_SeparatesOverlappingUnitVolumes()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
@@ -502,6 +561,52 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void Economy_UsesSharedOrderedQueueForInfantryAndArtillery()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        RtsEconomyProductionSystem economy = new RtsEconomyProductionSystem(config);
+        BuildingData factory = new BuildingData(
+            "Factory",
+            BuildingType.Factory,
+            null,
+            Vector2.zero,
+            Vector2Int.zero,
+            1f,
+            string.Empty,
+            Team.Player,
+            100
+        );
+        List<BuildingData> buildings = new List<BuildingData> { factory };
+        List<UnitType> spawned = new List<UnitType>();
+
+        Assert.IsTrue(economy.TryQueueArtillery(factory));
+        Assert.IsTrue(economy.TryQueueInfantry(factory));
+        Assert.AreEqual(2, factory.ProductionQueueCount);
+        Assert.AreEqual(UnitType.Artillery, factory.CurrentProductionType);
+        Assert.AreEqual(1, factory.ArtilleryQueue);
+        Assert.AreEqual(1, factory.InfantryQueue);
+        Assert.AreEqual(
+            config.StartingResources - config.ArtilleryCost - config.InfantryCost,
+            economy.Resources
+        );
+
+        economy.TickProduction(
+            config.ArtilleryTrainingTime,
+            buildings,
+            (_, unitType) =>
+            {
+                spawned.Add(unitType);
+                return true;
+            }
+        );
+
+        Assert.AreEqual(UnitType.Artillery, spawned[0]);
+        Assert.AreEqual(UnitType.Infantry, factory.CurrentProductionType);
+        Assert.AreEqual(config.InfantryTrainingTime, factory.ProductionTimer);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void ArenaObservation_UsesSystemState()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
@@ -520,6 +625,7 @@ public sealed class RuntimeSystemsTests
             (_, _) => { },
             (_, _) => { },
             (_, _) => { },
+            _ => false,
             _ => false,
             _ => false
         );
@@ -590,6 +696,79 @@ public sealed class RuntimeSystemsTests
         Assert.AreEqual(attacker.AttackDamage, feedbackEvents[0].Damage);
         Assert.AreEqual(Team.Player, feedbackEvents[0].SourceTeam);
         Assert.IsTrue(feedbackEvents[0].IsLethal);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void Artillery_DealsBonusDamageToMultiCellBuildingAndReleasesFootprint()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        List<BuildingData> buildings = new List<BuildingData>();
+        List<UnitData> units = new List<UnitData>();
+        HashSet<Vector2Int> occupied = new HashSet<Vector2Int>();
+        List<Vector2Int> footprint = new List<Vector2Int>
+        {
+            new Vector2Int(4, 4),
+            new Vector2Int(4, 5),
+            new Vector2Int(5, 4),
+            new Vector2Int(5, 5)
+        };
+        BuildingData target = new BuildingData(
+            "Target",
+            BuildingType.Factory,
+            null,
+            new Vector2(4f, 4f),
+            new Vector2Int(4, 4),
+            1f,
+            string.Empty,
+            Team.Enemy,
+            60,
+            footprint
+        );
+        UnitData artillery = new UnitData(
+            "Artillery",
+            UnitType.Artillery,
+            null,
+            Vector2.zero,
+            Vector2Int.zero,
+            config.ArtilleryRadius,
+            string.Empty,
+            Team.Player,
+            config.PlayerArtilleryHitPoints,
+            config.ArtilleryAttackDamage,
+            config.ArtilleryAttackRange,
+            config.ArtilleryAttackCooldown,
+            config.ArtilleryMoveSpeed,
+            config.ArtilleryBuildingDamageMultiplier
+        );
+        artillery.AttackTarget = target;
+        buildings.Add(target);
+        units.Add(artillery);
+
+        foreach (Vector2Int cell in footprint)
+        {
+            occupied.Add(cell);
+        }
+
+        RtsEntityLifecycle lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            occupied,
+            null,
+            null
+        );
+        RtsCombatSystem combat = new RtsCombatSystem(
+            config,
+            buildings,
+            units,
+            (_, _) => { },
+            lifecycle
+        );
+
+        combat.Tick(0.1f);
+
+        Assert.IsFalse(buildings.Contains(target));
+        Assert.IsTrue(footprint.TrueForAll(cell => !occupied.Contains(cell)));
         Object.DestroyImmediate(config);
     }
 
