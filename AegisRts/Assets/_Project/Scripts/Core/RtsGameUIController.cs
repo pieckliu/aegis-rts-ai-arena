@@ -309,11 +309,11 @@ internal sealed class RtsGameUIController
         else if (selectedUnits.Count == 1)
         {
             UnitData unit = selectedUnits[0];
-            infoText.text = $"{unit.DisplayName}\n生命：{unit.HitPoints}/{unit.MaxHitPoints}\n{unit.Description}";
+            infoText.text = $"{unit.DisplayName}\n生命：{unit.HitPoints}/{unit.MaxHitPoints}\n{unit.Description}\n拖动该单位移动，右键移动/攻击";
         }
         else if (selectedUnits.Count > 1)
         {
-            infoText.text = $"已选择 {selectedUnits.Count} 个单位\n右键移动或攻击敌军";
+            infoText.text = $"已选择 {selectedUnits.Count} 个单位\n拖动单位移动，或右键移动/攻击敌军";
         }
         else
         {
@@ -568,7 +568,7 @@ internal sealed class RtsGameUIController
 
     private void UpdateSelectionRectangle(RtsSelectionInputController input)
     {
-        if (input == null || !input.IsDragging)
+        if (input == null || !input.IsBoxSelecting)
         {
             selectionRect.gameObject.SetActive(false);
             return;

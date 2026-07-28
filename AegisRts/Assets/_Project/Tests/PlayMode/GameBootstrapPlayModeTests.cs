@@ -36,11 +36,7 @@ public sealed class GameBootstrapPlayModeTests
         Assert.IsNotNull(config);
         Assert.AreEqual(48, config.MapSize);
         Assert.AreEqual(6f, Camera.main.orthographicSize, 0.01f);
-        Vector2 requestedFocus = Vector2.Lerp(
-            playerBase.transform.position,
-            Vector2.zero,
-            0.25f
-        );
+        Vector2 requestedFocus = playerBase.transform.position;
         float mapHalfSize = config.MapSize * config.CellSize * 0.5f;
         float cameraMaxX = Mathf.Max(
             0f,

@@ -63,6 +63,7 @@ public sealed class RtsGameConfigTests
 
         Assert.AreEqual(48, config.MapSize);
         Assert.AreEqual(26f, config.MaxCameraSize);
+        Assert.AreEqual(0f, config.InitialCameraInwardBias);
         Assert.Less(config.BuildingSightRange * 2f, config.MapSize * config.CellSize);
 
         Object.DestroyImmediate(config);

@@ -47,7 +47,7 @@ public sealed class RtsGameConfig : ScriptableObject
     public float MinCameraSize = 6f;
     public float InitialCameraSize = 6f;
     public float MaxCameraSize = 26f;
-    [Range(0f, 1f)] public float InitialCameraInwardBias = 0.25f;
+    [Range(0f, 1f)] public float InitialCameraInwardBias;
     public float DragSelectThreshold = 10f;
 
     [Header("Visibility")]

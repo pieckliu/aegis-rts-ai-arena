@@ -17,7 +17,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsCameraController` owns camera setup, movement, zoom, map bounds, minimap navigation, and strategic-overview switching.
 - `RtsVisibilitySystem` owns current visibility, persistent exploration, the world fog texture, enemy presentation visibility, and non-leaking last-known enemy contact snapshots.
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
-- `RtsSelectionInputController` owns click, drag-selection, and command-input state.
+- `RtsSelectionInputController` owns click, empty-ground box selection, direct unit-drag movement, and command-input state.
 - `RtsEconomyProductionSystem` owns player resources, passive income, factory queues, and production timing.
 - `RtsCombatSystem` owns target acquisition, pursuit, cooldowns, damage, and combat resolution.
 - `CombatFeedbackEvent` is the one-way boundary from deterministic combat resolution to presentation.

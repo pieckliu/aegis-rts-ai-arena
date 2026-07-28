@@ -45,7 +45,7 @@ MonoBehaviour:
   MinCameraSize: 6
   InitialCameraSize: 6
   MaxCameraSize: 26
-  InitialCameraInwardBias: 0.25
+  InitialCameraInwardBias: 0
   DragSelectThreshold: 10
   BuildingSightRange: 6
   UnitSightRange: 5

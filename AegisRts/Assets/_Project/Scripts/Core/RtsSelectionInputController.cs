@@ -6,8 +6,11 @@ internal sealed class RtsSelectionInputController
     private readonly float dragThreshold;
 
     public bool IsDragging { get; private set; }
+    public bool IsBoxSelecting => IsDragging && !isDirectMoveGesture;
     public Vector2 DragStart { get; private set; }
     public Vector2 DragCurrent { get; private set; }
+
+    private bool isDirectMoveGesture;
 
     public RtsSelectionInputController(float threshold)
     {
@@ -17,13 +20,16 @@ internal sealed class RtsSelectionInputController
     public void TickSelection(
         bool enabled,
         Func<bool> isPointerBlocked,
+        Func<bool> tryBeginDirectMove,
         Action onSingleClick,
-        Action onDragSelection
+        Action onDragSelection,
+        Action onDirectMove
     )
     {
         if (!enabled)
         {
             IsDragging = false;
+            isDirectMoveGesture = false;
             return;
         }
 
@@ -35,6 +41,7 @@ internal sealed class RtsSelectionInputController
             }
 
             IsDragging = true;
+            isDirectMoveGesture = tryBeginDirectMove != null && tryBeginDirectMove();
             DragStart = Input.mousePosition;
             DragCurrent = DragStart;
         }
@@ -49,7 +56,9 @@ internal sealed class RtsSelectionInputController
             return;
         }
 
+        bool wasDirectMoveGesture = isDirectMoveGesture;
         IsDragging = false;
+        isDirectMoveGesture = false;
         DragCurrent = Input.mousePosition;
 
         if (isPointerBlocked())
@@ -59,7 +68,14 @@ internal sealed class RtsSelectionInputController
 
         if (Vector2.Distance(DragStart, DragCurrent) >= dragThreshold)
         {
-            onDragSelection();
+            if (wasDirectMoveGesture)
+            {
+                onDirectMove();
+            }
+            else
+            {
+                onDragSelection();
+            }
         }
         else
         {
