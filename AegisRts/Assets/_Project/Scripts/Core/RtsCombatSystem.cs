@@ -54,6 +54,11 @@ internal sealed class RtsCombatSystem
 
     private void TryAcquireTarget(UnitData source)
     {
+        if (source.Team == Team.Player && source.IsMoving)
+        {
+            return;
+        }
+
         UnitData nearest = null;
         float nearestDistance = float.MaxValue;
 

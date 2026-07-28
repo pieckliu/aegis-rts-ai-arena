@@ -35,7 +35,9 @@ Actions are rejected while the match is paused, terminal, or outside the playing
 
 Human-controlled units use grid pathfinding for movement orders. Every cell in a building's
 3×3 footprint is blocked, while each member of a selected group receives its own destination.
-Undeployed artillery can move but cannot fire. Deployed artillery cannot move, can attack from
+An accepted `Move` action clears the unit's current attack target and suppresses automatic
+target acquisition until that movement order finishes. Undeployed artillery can move but
+cannot fire. Deployed artillery cannot move, can attack from
 long range, and deals bonus damage to buildings.
 
 ## Next bridge

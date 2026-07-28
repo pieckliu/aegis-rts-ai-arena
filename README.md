@@ -30,6 +30,7 @@ Playable Unity vertical slice:
 - spend and regenerate resources, then train infantry or deployable long-range artillery;
 - use a shared ordered factory queue and wait when every footprint-adjacent exit is blocked;
 - select, box-select, drag friendly units to move, and command groups to attack;
+- interrupt infantry combat with a new move order so player-controlled units can retreat;
 - move directly to exact clicked positions, keep unit volumes separated, and use grid detours around occupied structures;
 - deploy artillery to unlock firing and display its range, then undeploy it before moving again;
 - start focused directly on the player-base side of the battlefield, then pan and zoom the bounded camera;

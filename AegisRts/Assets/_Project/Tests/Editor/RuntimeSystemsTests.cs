@@ -394,6 +394,114 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void MovementCommand_AllowsPlayerInfantryToRetreatFromEnemyUnit()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 12;
+        config.CellSize = 1f;
+        config.UnitMoveSpeed = 4f;
+        config.UnitAggroRange = 10f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData player = CreateUnitAt(gridMap, new Vector2Int(3, 3), "Player");
+        UnitData enemy = CreateUnitAt(gridMap, new Vector2Int(4, 3), "Enemy");
+        enemy.Team = Team.Enemy;
+        player.AttackUnitTarget = enemy;
+        List<UnitData> units = new List<UnitData> { player, enemy };
+        List<BuildingData> buildings = new List<BuildingData>();
+        UnitMovementSystem movement = new UnitMovementSystem(config, gridMap, units);
+        RtsEntityLifecycle lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            gridMap.OccupiedCells,
+            null,
+            null
+        );
+        RtsCombatSystem combat = new RtsCombatSystem(
+            config,
+            buildings,
+            units,
+            (unit, target) => movement.MoveTowards(unit, target, 0.1f),
+            lifecycle
+        );
+        Vector2 startPosition = player.Position;
+
+        Assert.AreEqual(1, movement.CommandGroupMove(
+            new List<UnitData> { player },
+            new Vector2Int(9, 9)
+        ));
+        Assert.IsNull(player.AttackUnitTarget);
+        Assert.IsTrue(player.IsMoving);
+
+        combat.Tick(0.1f);
+        movement.Tick(0.25f);
+
+        Assert.IsNull(
+            player.AttackUnitTarget,
+            "A retreating player unit must not immediately reacquire the nearby enemy."
+        );
+        Assert.IsTrue(player.IsMoving);
+        Assert.AreNotEqual(startPosition, player.Position);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void MovementCommand_AllowsPlayerInfantryToRetreatFromEnemyBuilding()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 12;
+        config.CellSize = 1f;
+        config.UnitMoveSpeed = 4f;
+        config.UnitAggroRange = 10f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData player = CreateUnitAt(gridMap, new Vector2Int(3, 3), "Player");
+        BuildingData enemyBase = new BuildingData(
+            "Enemy Base",
+            BuildingType.Base,
+            null,
+            gridMap.CellToWorld(new Vector2Int(4, 3)),
+            new Vector2Int(4, 3),
+            1f,
+            string.Empty,
+            Team.Enemy,
+            100
+        );
+        player.AttackTarget = enemyBase;
+        List<UnitData> units = new List<UnitData> { player };
+        List<BuildingData> buildings = new List<BuildingData> { enemyBase };
+        UnitMovementSystem movement = new UnitMovementSystem(config, gridMap, units);
+        RtsEntityLifecycle lifecycle = new RtsEntityLifecycle(
+            buildings,
+            units,
+            gridMap.OccupiedCells,
+            null,
+            null
+        );
+        RtsCombatSystem combat = new RtsCombatSystem(
+            config,
+            buildings,
+            units,
+            (unit, target) => movement.MoveTowards(unit, target, 0.1f),
+            lifecycle
+        );
+        Vector2 startPosition = player.Position;
+
+        Assert.AreEqual(1, movement.CommandGroupMove(
+            new List<UnitData> { player },
+            new Vector2Int(9, 9)
+        ));
+        Assert.IsNull(player.AttackTarget);
+        Assert.IsTrue(player.IsMoving);
+
+        combat.Tick(0.1f);
+        movement.Tick(0.25f);
+
+        Assert.IsNull(player.AttackTarget);
+        Assert.IsTrue(player.IsMoving);
+        Assert.AreNotEqual(startPosition, player.Position);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Movement_BuildingOnDirectRouteUsesGridWaypoints()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
