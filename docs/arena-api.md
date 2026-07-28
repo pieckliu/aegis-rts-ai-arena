@@ -11,7 +11,9 @@ The snapshot contains:
 - match time, player resources, terminal state, and result;
 - every building and unit with a stable match-local ID;
 - entity kind, team, world position, grid cell, and health;
-- factory queue count and current production progress.
+- each building's exact occupied grid cells;
+- factory queue count, current production kind, and production progress.
+- artillery deployment state.
 
 ## Actions
 
@@ -22,13 +24,21 @@ Supported action types:
 - `Move`: set `UnitIds`, `CellX`, and `CellY`;
 - `Attack`: set `UnitIds` and `TargetId`;
 - `BuildFactory`: set `CellX` and `CellY`;
-- `TrainInfantry`: no additional fields are required.
+- `TrainInfantry`: no additional fields are required;
+- `TrainArtillery`: no additional fields are required;
+- `DeployArtillery`: set the artillery `UnitIds`;
+- `UndeployArtillery`: set the artillery `UnitIds`.
 
 Every call returns an `ArenaActionResult` with `Accepted` and `Message`.
 
 Actions are rejected while the match is paused, terminal, or outside the playing state. The API uses the same validation and command paths as human input so agent matches follow normal game rules.
 
-Human-controlled units use grid pathfinding for movement orders. Occupied building and destination cells are treated as blocked, while each member of a selected group receives its own destination.
+Human-controlled units use grid pathfinding for movement orders. Every cell in a building's
+3×3 footprint is blocked, while each member of a selected group receives its own destination.
+An accepted `Move` action clears the unit's current attack target and suppresses automatic
+target acquisition until that movement order finishes. Undeployed artillery can move but
+cannot fire. Deployed artillery cannot move, can attack from
+long range, and deals bonus damage to buildings.
 
 ## Next bridge
 

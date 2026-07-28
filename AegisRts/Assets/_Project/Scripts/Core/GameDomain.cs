@@ -16,7 +16,8 @@ internal enum BuildingType
 
 internal enum UnitType
 {
-    Infantry
+    Infantry,
+    Artillery
 }
 
 internal enum Team
@@ -38,8 +39,15 @@ internal sealed class BuildingData
     public Team Team;
     public int MaxHitPoints;
     public int HitPoints;
-    public int InfantryQueue;
+    public readonly List<Vector2Int> OccupiedCells = new List<Vector2Int>();
+    public readonly List<UnitType> ProductionQueue = new List<UnitType>();
     public float ProductionTimer;
+    public int InfantryQueue => CountQueued(UnitType.Infantry);
+    public int ArtilleryQueue => CountQueued(UnitType.Artillery);
+    public int ProductionQueueCount => ProductionQueue.Count;
+    public UnitType CurrentProductionType => ProductionQueue.Count > 0
+        ? ProductionQueue[0]
+        : UnitType.Infantry;
 
     public BuildingData(
         string displayName,
@@ -50,7 +58,8 @@ internal sealed class BuildingData
         float radius,
         string description,
         Team team,
-        int maxHitPoints
+        int maxHitPoints,
+        IEnumerable<Vector2Int> occupiedCells = null
     )
     {
         DisplayName = displayName;
@@ -63,6 +72,31 @@ internal sealed class BuildingData
         Team = team;
         MaxHitPoints = maxHitPoints;
         HitPoints = maxHitPoints;
+
+        if (occupiedCells != null)
+        {
+            OccupiedCells.AddRange(occupiedCells);
+        }
+
+        if (OccupiedCells.Count == 0)
+        {
+            OccupiedCells.Add(cell);
+        }
+    }
+
+    private int CountQueued(UnitType unitType)
+    {
+        int count = 0;
+
+        foreach (UnitType queuedType in ProductionQueue)
+        {
+            if (queuedType == unitType)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 }
 
@@ -87,6 +121,9 @@ internal sealed class UnitData
     public float AttackRange;
     public float AttackCooldown;
     public float AttackTimer;
+    public float MoveSpeed;
+    public float BuildingDamageMultiplier;
+    public bool IsDeployed;
     public BuildingData AttackTarget;
     public UnitData AttackUnitTarget;
 
@@ -102,7 +139,9 @@ internal sealed class UnitData
         int maxHitPoints,
         int attackDamage,
         float attackRange,
-        float attackCooldown
+        float attackCooldown,
+        float moveSpeed = 0f,
+        float buildingDamageMultiplier = 1f
     )
     {
         DisplayName = displayName;
@@ -120,5 +159,7 @@ internal sealed class UnitData
         AttackDamage = attackDamage;
         AttackRange = attackRange;
         AttackCooldown = attackCooldown;
+        MoveSpeed = moveSpeed;
+        BuildingDamageMultiplier = Mathf.Max(0f, buildingDamageMultiplier);
     }
 }

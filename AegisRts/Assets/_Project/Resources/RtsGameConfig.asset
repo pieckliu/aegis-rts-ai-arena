@@ -14,10 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: AegisRts.Core::RtsGameConfig
   MapSize: 48
   CellSize: 1
-  BaseRadius: 0.45
+  BaseRadius: 1.25
+  BaseFootprintRadius: 1
   BuildRadius: 7
-  BuildingRadius: 0.42
+  BuildingRadius: 1.05
+  FactoryFootprintRadius: 1
   InfantryTrainingTime: 3
+  ArtilleryTrainingTime: 6
   MaxFactoryQueueSize: 5
   PlayerBaseHitPoints: 500
   FactoryHitPoints: 300
@@ -26,6 +29,11 @@ MonoBehaviour:
   InfantryAttackRange: 1.2
   InfantryAttackCooldown: 1
   PlayerInfantryHitPoints: 100
+  ArtilleryAttackDamage: 45
+  ArtilleryAttackRange: 6
+  ArtilleryAttackCooldown: 2.4
+  ArtilleryBuildingDamageMultiplier: 1.75
+  PlayerArtilleryHitPoints: 70
   EnemyInfantryHitPoints: 80
   UnitAggroRange: 4
   EnemySpawnInterval: 15
@@ -35,11 +43,14 @@ MonoBehaviour:
   StartingResources: 500
   FactoryCost: 150
   InfantryCost: 50
+  ArtilleryCost: 120
   PassiveResourceIncome: 10
   PassiveResourceInterval: 5
   InfantryRadius: 0.42
+  ArtilleryRadius: 0.52
   UnitCollisionPadding: 0.04
   UnitMoveSpeed: 5
+  ArtilleryMoveSpeed: 2.6
   CameraMoveSpeed: 14
   CameraZoomSpeed: 3
   MinCameraSize: 6

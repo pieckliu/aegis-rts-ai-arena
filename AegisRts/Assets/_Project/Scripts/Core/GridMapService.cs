@@ -3,20 +3,14 @@ using UnityEngine;
 
 internal sealed class GridMapService
 {
-    private static readonly Vector2Int[] SpawnOffsets =
+    private const int SpawnSearchRadius = 4;
+
+    private static readonly Vector2Int[] CardinalDirections =
     {
-        new Vector2Int(0, -1),
-        new Vector2Int(-1, 0),
-        new Vector2Int(1, 0),
-        new Vector2Int(0, 1),
-        new Vector2Int(-1, -1),
-        new Vector2Int(1, -1),
-        new Vector2Int(-1, 1),
-        new Vector2Int(1, 1),
-        new Vector2Int(0, -2),
-        new Vector2Int(-2, 0),
-        new Vector2Int(2, 0),
-        new Vector2Int(0, 2)
+        Vector2Int.down,
+        Vector2Int.left,
+        Vector2Int.right,
+        Vector2Int.up
     };
 
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
@@ -77,9 +71,79 @@ internal sealed class GridMapService
         return IsCellInside(cell) && occupiedCells.Add(cell);
     }
 
+    public bool CanOccupy(IEnumerable<Vector2Int> cells)
+    {
+        if (cells == null)
+        {
+            return false;
+        }
+
+        HashSet<Vector2Int> requestedCells = new HashSet<Vector2Int>();
+
+        foreach (Vector2Int cell in cells)
+        {
+            if (!requestedCells.Add(cell) ||
+                !IsCellInside(cell) ||
+                IsOccupied(cell))
+            {
+                return false;
+            }
+        }
+
+        return requestedCells.Count > 0;
+    }
+
+    public bool TryOccupy(IEnumerable<Vector2Int> cells)
+    {
+        if (!CanOccupy(cells))
+        {
+            return false;
+        }
+
+        foreach (Vector2Int cell in cells)
+        {
+            occupiedCells.Add(cell);
+        }
+
+        return true;
+    }
+
     public void Release(Vector2Int cell)
     {
         occupiedCells.Remove(cell);
+    }
+
+    public void Release(IEnumerable<Vector2Int> cells)
+    {
+        if (cells == null)
+        {
+            return;
+        }
+
+        foreach (Vector2Int cell in cells)
+        {
+            occupiedCells.Remove(cell);
+        }
+    }
+
+    public List<Vector2Int> GetSquareFootprint(Vector2Int centerCell, int radius)
+    {
+        List<Vector2Int> cells = new List<Vector2Int>();
+        int footprintRadius = Mathf.Max(0, radius);
+
+        for (int x = centerCell.x - footprintRadius;
+             x <= centerCell.x + footprintRadius;
+             x++)
+        {
+            for (int y = centerCell.y - footprintRadius;
+                 y <= centerCell.y + footprintRadius;
+                 y++)
+            {
+                cells.Add(new Vector2Int(x, y));
+            }
+        }
+
+        return cells;
     }
 
     public void Clear()
@@ -89,14 +153,41 @@ internal sealed class GridMapService
 
     public bool TryFindOpenCellNear(Vector2Int originCell, out Vector2Int openCell)
     {
-        foreach (Vector2Int offset in SpawnOffsets)
-        {
-            Vector2Int candidate = originCell + offset;
+        int maximumRadius = Mathf.Min(SpawnSearchRadius, MapSize - 1);
 
-            if (IsCellInside(candidate) && !IsOccupied(candidate))
+        for (int radius = 1; radius <= maximumRadius; radius++)
+        {
+            foreach (Vector2Int direction in CardinalDirections)
             {
-                openCell = candidate;
-                return true;
+                Vector2Int cardinalCandidate = originCell + direction * radius;
+
+                if (IsCellInside(cardinalCandidate) &&
+                    !IsOccupied(cardinalCandidate))
+                {
+                    openCell = cardinalCandidate;
+                    return true;
+                }
+            }
+
+            for (int x = -radius; x <= radius; x++)
+            {
+                for (int y = -radius; y <= radius; y++)
+                {
+                    if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(y)) != radius ||
+                        x == 0 ||
+                        y == 0)
+                    {
+                        continue;
+                    }
+
+                    Vector2Int candidate = originCell + new Vector2Int(x, y);
+
+                    if (IsCellInside(candidate) && !IsOccupied(candidate))
+                    {
+                        openCell = candidate;
+                        return true;
+                    }
+                }
             }
         }
 

@@ -16,6 +16,8 @@ internal sealed class ArenaOrchestrator
     private readonly Action<List<UnitData>, UnitData> attackUnit;
     private readonly Action<List<UnitData>, BuildingData> attackBuilding;
     private readonly Func<BuildingData, bool> trainInfantry;
+    private readonly Func<BuildingData, bool> trainArtillery;
+    private readonly Action<List<UnitData>, bool> setArtilleryDeployment;
     private readonly Func<Vector2Int, bool> buildFactory;
 
     public ArenaOrchestrator(
@@ -30,7 +32,9 @@ internal sealed class ArenaOrchestrator
         Action<List<UnitData>, Vector2Int> move,
         Action<List<UnitData>, UnitData> attackUnitAction,
         Action<List<UnitData>, BuildingData> attackBuildingAction,
-        Func<BuildingData, bool> train,
+        Func<BuildingData, bool> trainInfantryAction,
+        Func<BuildingData, bool> trainArtilleryAction,
+        Action<List<UnitData>, bool> deploymentAction,
         Func<Vector2Int, bool> build
     )
     {
@@ -45,7 +49,9 @@ internal sealed class ArenaOrchestrator
         moveUnits = move;
         attackUnit = attackUnitAction;
         attackBuilding = attackBuildingAction;
-        trainInfantry = train;
+        trainInfantry = trainInfantryAction;
+        trainArtillery = trainArtilleryAction;
+        setArtilleryDeployment = deploymentAction;
         buildFactory = build;
     }
 
@@ -64,10 +70,17 @@ internal sealed class ArenaOrchestrator
                 building.Cell,
                 building.HitPoints,
                 building.MaxHitPoints,
-                building.InfantryQueue,
-                building.InfantryQueue > 0
-                    ? 1f - Mathf.Clamp01(building.ProductionTimer / config.InfantryTrainingTime)
-                    : 0f
+                building.ProductionQueueCount,
+                building.ProductionQueueCount > 0
+                    ? 1f - Mathf.Clamp01(
+                        building.ProductionTimer /
+                        economy.GetTrainingTime(building.CurrentProductionType)
+                    )
+                    : 0f,
+                building.ProductionQueueCount > 0
+                    ? building.CurrentProductionType.ToString()
+                    : string.Empty,
+                building.OccupiedCells
             ));
         }
 
@@ -80,7 +93,8 @@ internal sealed class ArenaOrchestrator
                 unit.Position,
                 unit.Cell,
                 unit.HitPoints,
-                unit.MaxHitPoints
+                unit.MaxHitPoints,
+                isDeployed: unit.IsDeployed
             ));
         }
 
@@ -170,6 +184,40 @@ internal sealed class ArenaOrchestrator
             return ArenaActionResult.Reject("No player factory exists.");
         }
 
+        if (action.Type == "TrainArtillery")
+        {
+            foreach (BuildingData building in buildings)
+            {
+                if (building.Team == Team.Player && building.Type == BuildingType.Factory)
+                {
+                    return trainArtillery(building)
+                        ? ArenaActionResult.Success("Artillery training accepted.")
+                        : ArenaActionResult.Reject("Insufficient resources or the queue is full.");
+                }
+            }
+
+            return ArenaActionResult.Reject("No player factory exists.");
+        }
+
+        if (action.Type == "DeployArtillery" ||
+            action.Type == "UndeployArtillery")
+        {
+            List<UnitData> artilleryUnits = FindPlayerArtillery(action.UnitIds);
+
+            if (artilleryUnits.Count == 0)
+            {
+                return ArenaActionResult.Reject("No valid player artillery units.");
+            }
+
+            bool deploy = action.Type == "DeployArtillery";
+            setArtilleryDeployment(artilleryUnits, deploy);
+            return ArenaActionResult.Success(
+                deploy
+                    ? "Artillery deployment accepted."
+                    : "Artillery undeployment accepted."
+            );
+        }
+
         if (action.Type == "BuildFactory")
         {
             return buildFactory(new Vector2Int(action.CellX, action.CellY))
@@ -204,6 +252,13 @@ internal sealed class ArenaOrchestrator
         return result;
     }
 
+    private List<UnitData> FindPlayerArtillery(int[] ids)
+    {
+        List<UnitData> result = FindPlayerUnits(ids);
+        result.RemoveAll(unit => unit.Type != UnitType.Artillery);
+        return result;
+    }
+
     private static ArenaEntityObservation ToObservation(
         int id,
         string kind,
@@ -213,9 +268,28 @@ internal sealed class ArenaOrchestrator
         int hitPoints,
         int maxHitPoints,
         int queueCount = 0,
-        float productionProgress = 0f
+        float productionProgress = 0f,
+        string productionKind = "",
+        IList<Vector2Int> occupiedCells = null,
+        bool isDeployed = false
     )
     {
+        ArenaCellObservation[] footprint = null;
+
+        if (occupiedCells != null)
+        {
+            footprint = new ArenaCellObservation[occupiedCells.Count];
+
+            for (int i = 0; i < occupiedCells.Count; i++)
+            {
+                footprint[i] = new ArenaCellObservation
+                {
+                    X = occupiedCells[i].x,
+                    Y = occupiedCells[i].y
+                };
+            }
+        }
+
         return new ArenaEntityObservation
         {
             Id = id,
@@ -228,7 +302,10 @@ internal sealed class ArenaOrchestrator
             HitPoints = hitPoints,
             MaxHitPoints = maxHitPoints,
             QueueCount = queueCount,
-            ProductionProgress = productionProgress
+            ProductionKind = productionKind,
+            ProductionProgress = productionProgress,
+            OccupiedCells = footprint,
+            IsDeployed = isDeployed
         };
     }
 }

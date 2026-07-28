@@ -57,7 +57,10 @@ internal sealed class RtsEntityLifecycle
             return;
         }
 
-        occupiedCells.Remove(building.Cell);
+        foreach (Vector2Int occupiedCell in building.OccupiedCells)
+        {
+            occupiedCells.Remove(occupiedCell);
+        }
 
         foreach (UnitData unit in units)
         {

@@ -54,6 +54,11 @@ internal sealed class RtsCombatSystem
 
     private void TryAcquireTarget(UnitData source)
     {
+        if (source.Team == Team.Player && source.IsMoving)
+        {
+            return;
+        }
+
         UnitData nearest = null;
         float nearestDistance = float.MaxValue;
 
@@ -94,9 +99,21 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) > attacker.AttackRange)
+        bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
+            attacker.AttackRange + attacker.Radius + target.Radius;
+
+        if (!inRange)
         {
-            moveTowards(attacker, target.Position);
+            if (!RequiresStationaryDeployment(attacker))
+            {
+                moveTowards(attacker, target.Position);
+            }
+
+            return;
+        }
+
+        if (attacker.Type == UnitType.Artillery && !attacker.IsDeployed)
+        {
             return;
         }
 
@@ -108,8 +125,15 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-        PublishFeedback(attacker, target.Position, target.GameObject, target.HitPoints <= 0);
+        int damage = attacker.AttackDamage;
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
+        PublishFeedback(
+            attacker,
+            target.Position,
+            target.GameObject,
+            damage,
+            target.HitPoints <= 0
+        );
 
         if (target.HitPoints <= 0)
         {
@@ -128,9 +152,21 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) > attacker.AttackRange)
+        bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
+            attacker.AttackRange + attacker.Radius + target.Radius;
+
+        if (!inRange)
         {
-            moveTowards(attacker, target.Position);
+            if (!RequiresStationaryDeployment(attacker))
+            {
+                moveTowards(attacker, target.Position);
+            }
+
+            return;
+        }
+
+        if (attacker.Type == UnitType.Artillery && !attacker.IsDeployed)
+        {
             return;
         }
 
@@ -142,8 +178,17 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, attacker.AttackDamage);
-        PublishFeedback(attacker, target.Position, target.GameObject, target.HitPoints <= 0);
+        int damage = Mathf.RoundToInt(
+            attacker.AttackDamage * attacker.BuildingDamageMultiplier
+        );
+        target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
+        PublishFeedback(
+            attacker,
+            target.Position,
+            target.GameObject,
+            damage,
+            target.HitPoints <= 0
+        );
 
         if (target.HitPoints <= 0)
         {
@@ -156,6 +201,7 @@ internal sealed class RtsCombatSystem
         UnitData attacker,
         Vector2 targetPosition,
         GameObject targetObject,
+        int damage,
         bool isLethal
     )
     {
@@ -165,8 +211,13 @@ internal sealed class RtsCombatSystem
             attacker.GameObject,
             targetObject,
             attacker.Team,
-            attacker.AttackDamage,
+            damage,
             isLethal
         ));
+    }
+
+    private static bool RequiresStationaryDeployment(UnitData unit)
+    {
+        return unit.Type == UnitType.Artillery && unit.IsDeployed;
     }
 }
