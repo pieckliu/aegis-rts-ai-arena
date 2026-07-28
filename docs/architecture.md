@@ -7,7 +7,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GameBootstrap` coordinates match state, world creation, scene objects, and the extracted runtime systems.
 - `GridMapService` owns map bounds, coordinate conversion, occupied cells, and nearby open-cell lookup.
 - `BuildingPlacementSystem` validates and atomically reserves paid building placements.
-- `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, and combat pursuit movement.
+- `UnitMovementSystem` owns exact-position direct movement, formation-cell assignment, obstacle-triggered grid path requests, movement updates, combat pursuit movement, and deterministic unit-volume separation.
 - `EnemyAISystem` owns enemy spawn timing, spawn-cell selection, and initial attack strategy.
 - `EntityPresentationFactory` creates symbolic circle views, grid lines, and overlays. Authored prefabs remain optional and are disabled in the active prototype.
 - `PresentationPrefabCatalog` is the Resources-loaded source of player/enemy building, infantry, overlay, and grid-line prefabs.
@@ -17,7 +17,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsCameraController` owns camera setup, movement, zoom, map bounds, minimap navigation, and strategic-overview switching.
 - `RtsVisibilitySystem` owns current visibility, persistent exploration, the world fog texture, enemy presentation visibility, and non-leaking last-known enemy contact snapshots.
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
-- `RtsSelectionInputController` owns click, drag-selection, and command-input state.
+- `RtsSelectionInputController` owns click, empty-ground box selection, direct unit-drag movement, and command-input state.
 - `RtsEconomyProductionSystem` owns player resources, passive income, factory queues, and production timing.
 - `RtsCombatSystem` owns target acquisition, pursuit, cooldowns, damage, and combat resolution.
 - `CombatFeedbackEvent` is the one-way boundary from deterministic combat resolution to presentation.
@@ -30,7 +30,9 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `GridPathfinder` contains deterministic grid path search.
 - `ArenaContracts` defines serializable observations, actions, entities, and results.
 
-The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. `GameBootstrap` loads it at startup and falls back to scene values only if the asset is missing.
+The default balance asset is `Assets/_Project/Resources/RtsGameConfig.asset`. It defines the
+expanded 48×48 exploration map, camera limits, sight ranges, and unit collision padding.
+`GameBootstrap` loads it at startup and falls back to scene values only if the asset is missing.
 
 ## Extraction status
 

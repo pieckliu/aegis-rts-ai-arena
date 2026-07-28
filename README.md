@@ -25,11 +25,12 @@ The project explores a tactical RTS environment where human players can fight ag
 
 Playable Unity vertical slice:
 
+- explore an expanded 48×48 battlefield that opens around the player base;
 - build a factory, spend and regenerate resources, and train infantry;
 - queue production in factories and wait when an exit is blocked;
-- select, box-select, move, and command groups to attack;
-- move directly to exact clicked positions across clear ground and use grid detours around occupied structures;
-- start focused near the player base, then pan and zoom the bounded battlefield camera;
+- select, box-select, drag friendly units to move, and command groups to attack;
+- move directly to exact clicked positions, keep unit volumes separated, and use grid detours around occupied structures;
+- start focused directly on the player-base side of the battlefield, then pan and zoom the bounded camera;
 - explore a three-state fog of war driven by player building and unit sight;
 - use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;
 - read player bases, factories, infantry, and enemies as distinct symbolic dots;

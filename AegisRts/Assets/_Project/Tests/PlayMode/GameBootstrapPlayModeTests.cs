@@ -32,17 +32,17 @@ public sealed class GameBootstrapPlayModeTests
         Assert.IsNull(playerBase.GetComponent<RtsEntityViewAnimator>());
         Assert.IsNotNull(GameObject.Find("FogOfWar"));
         Assert.IsNotNull(GameObject.Find("Minimap"));
+        RtsGameConfig config = Resources.Load<RtsGameConfig>("RtsGameConfig");
+        Assert.IsNotNull(config);
+        Assert.AreEqual(48, config.MapSize);
         Assert.AreEqual(6f, Camera.main.orthographicSize, 0.01f);
-        Vector2 requestedFocus = Vector2.Lerp(
-            playerBase.transform.position,
-            Vector2.zero,
-            0.25f
-        );
+        Vector2 requestedFocus = playerBase.transform.position;
+        float mapHalfSize = config.MapSize * config.CellSize * 0.5f;
         float cameraMaxX = Mathf.Max(
             0f,
-            16f - Camera.main.orthographicSize * Camera.main.aspect
+            mapHalfSize - Camera.main.orthographicSize * Camera.main.aspect
         );
-        float cameraMaxY = 16f - Camera.main.orthographicSize;
+        float cameraMaxY = mapHalfSize - Camera.main.orthographicSize;
         Assert.AreEqual(
             Mathf.Clamp(requestedFocus.x, -cameraMaxX, cameraMaxX),
             Camera.main.transform.position.x,
@@ -58,6 +58,19 @@ public sealed class GameBootstrapPlayModeTests
         Assert.AreEqual("MinimapDot", mapDot.GetComponent<Image>()?.sprite?.name);
         GameObject audioFeedback = GameObject.Find("AudioFeedback");
         Assert.IsNull(audioFeedback);
+        Texture2D fogTexture = GameObject
+            .Find("MinimapFog")
+            .GetComponent<RawImage>()
+            .texture as Texture2D;
+        Assert.IsNotNull(fogTexture);
+        int initialRevealedCells = fogTexture
+            .GetPixels()
+            .Count(color => color.a < 0.9f);
+        Assert.Less(
+            initialRevealedCells,
+            config.MapSize * config.MapSize / 4,
+            "The opening view should reveal only the area surrounding the player base."
+        );
 
         yield return null;
 
@@ -68,11 +81,18 @@ public sealed class GameBootstrapPlayModeTests
         Assert.AreEqual(0, healthBars.Length, "Undamaged and unselected buildings should not show health bars.");
 
         GameBootstrap bootstrap = Object.FindAnyObjectByType<GameBootstrap>();
+        ArenaEntityObservation playerBaseObservation = bootstrap
+            .GetArenaObservation()
+            .Buildings
+            .First(building =>
+                building.Team == Team.Player.ToString() &&
+                building.Kind == BuildingType.Base.ToString()
+            );
         ArenaActionResult buildResult = bootstrap.ExecuteArenaAction(new ArenaAction
         {
             Type = "BuildFactory",
-            CellX = 28,
-            CellY = 28
+            CellX = playerBaseObservation.CellX - 1,
+            CellY = playerBaseObservation.CellY
         });
         ArenaActionResult trainResult = bootstrap.ExecuteArenaAction(new ArenaAction
         {
@@ -120,8 +140,8 @@ public sealed class GameBootstrapPlayModeTests
         {
             Type = "Move",
             UnitIds = new[] { playerUnit.Id },
-            CellX = 20,
-            CellY = 20
+            CellX = Mathf.Max(1, playerUnit.CellX - 6),
+            CellY = Mathf.Max(1, playerUnit.CellY - 6)
         });
 
         Assert.IsTrue(moveResult.Accepted, moveResult.Message);
@@ -132,6 +152,14 @@ public sealed class GameBootstrapPlayModeTests
             initialMapPosition,
             playerUnitMapRect.anchorMin,
             "The friendly minimap marker should track the unit's live movement."
+        );
+        int revealedCellsAfterMovement = fogTexture
+            .GetPixels()
+            .Count(color => color.a < 0.9f);
+        Assert.Greater(
+            revealedCellsAfterMovement,
+            initialRevealedCells,
+            "Moving a friendly unit should expand the explored fog-of-war area."
         );
     }
 }

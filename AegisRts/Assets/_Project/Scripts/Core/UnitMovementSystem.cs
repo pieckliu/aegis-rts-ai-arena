@@ -4,6 +4,7 @@ using UnityEngine;
 internal sealed class UnitMovementSystem
 {
     private const int FormationSearchRadius = 6;
+    private const int SeparationIterations = 3;
     private static readonly Vector2[] ClearanceDirections =
     {
         Vector2.zero,
@@ -20,6 +21,8 @@ internal sealed class UnitMovementSystem
     private readonly RtsGameConfig config;
     private readonly GridMapService gridMap;
     private readonly IList<UnitData> units;
+    private readonly HashSet<Vector2Int> collisionObstacleCells =
+        new HashSet<Vector2Int>();
 
     public UnitMovementSystem(
         RtsGameConfig gameConfig,
@@ -107,7 +110,7 @@ internal sealed class UnitMovementSystem
                 gridMap.CellToWorld(targetCell) + formationOffset
             );
 
-            if (!IsPositionClear(targetPosition, obstacleCells))
+            if (!IsPositionClear(targetPosition, unit.Radius, obstacleCells))
             {
                 targetPosition = gridMap.CellToWorld(targetCell);
             }
@@ -115,6 +118,7 @@ internal sealed class UnitMovementSystem
             bool canMoveDirectly = IsDirectPathClear(
                 unit.Position,
                 targetPosition,
+                unit.Radius,
                 obstacleCells
             );
             List<Vector2Int> path = canMoveDirectly
@@ -168,7 +172,12 @@ internal sealed class UnitMovementSystem
 
     private Vector2 ClampTargetPosition(Vector2 position)
     {
-        float margin = Mathf.Min(config.InfantryRadius, gridMap.HalfSize);
+        return ClampUnitPosition(position, config.InfantryRadius);
+    }
+
+    private Vector2 ClampUnitPosition(Vector2 position, float radius)
+    {
+        float margin = Mathf.Min(Mathf.Max(0f, radius), gridMap.HalfSize);
         return new Vector2(
             Mathf.Clamp(position.x, -gridMap.HalfSize + margin, gridMap.HalfSize - margin),
             Mathf.Clamp(position.y, -gridMap.HalfSize + margin, gridMap.HalfSize - margin)
@@ -178,6 +187,7 @@ internal sealed class UnitMovementSystem
     private bool IsDirectPathClear(
         Vector2 start,
         Vector2 end,
+        float unitRadius,
         ISet<Vector2Int> obstacleCells
     )
     {
@@ -196,7 +206,7 @@ internal sealed class UnitMovementSystem
         {
             Vector2 point = Vector2.Lerp(start, end, sample / (float)sampleCount);
 
-            if (!IsPositionClear(point, obstacleCells))
+            if (!IsPositionClear(point, unitRadius, obstacleCells))
             {
                 return false;
             }
@@ -205,14 +215,18 @@ internal sealed class UnitMovementSystem
         return true;
     }
 
-    private bool IsPositionClear(Vector2 position, ISet<Vector2Int> obstacleCells)
+    private bool IsPositionClear(
+        Vector2 position,
+        float unitRadius,
+        ISet<Vector2Int> obstacleCells
+    )
     {
         if (obstacleCells == null || obstacleCells.Count == 0)
         {
             return true;
         }
 
-        float clearance = config.InfantryRadius * 0.9f;
+        float clearance = Mathf.Max(0f, unitRadius) * 0.9f;
 
         foreach (Vector2 direction in ClearanceDirections)
         {
@@ -333,6 +347,137 @@ internal sealed class UnitMovementSystem
             if (!unit.IsMoving)
             {
                 Debug.Log($"{unit.DisplayName} arrived at cell {unit.Cell}");
+            }
+        }
+
+        ResolveUnitCollisions();
+    }
+
+    private void ResolveUnitCollisions()
+    {
+        RebuildCollisionObstacleCells();
+
+        for (int iteration = 0; iteration < SeparationIterations; iteration++)
+        {
+            bool foundOverlap = false;
+
+            for (int firstIndex = 0; firstIndex < units.Count; firstIndex++)
+            {
+                UnitData first = units[firstIndex];
+
+                if (first == null)
+                {
+                    continue;
+                }
+
+                for (int secondIndex = firstIndex + 1; secondIndex < units.Count; secondIndex++)
+                {
+                    UnitData second = units[secondIndex];
+
+                    if (second == null)
+                    {
+                        continue;
+                    }
+
+                    float minimumDistance = Mathf.Max(
+                        0.01f,
+                        first.Radius + second.Radius + config.UnitCollisionPadding
+                    );
+                    Vector2 delta = second.Position - first.Position;
+                    float distance = delta.magnitude;
+
+                    if (distance >= minimumDistance - 0.001f)
+                    {
+                        continue;
+                    }
+
+                    foundOverlap = true;
+                    Vector2 direction = distance > 0.0001f
+                        ? delta / distance
+                        : ((firstIndex + secondIndex) & 1) == 0
+                            ? Vector2.right
+                            : Vector2.up;
+                    float overlap = minimumDistance - distance;
+                    Vector2 firstCandidate = ClampUnitPosition(
+                        first.Position - direction * (overlap * 0.5f),
+                        first.Radius
+                    );
+                    Vector2 secondCandidate = ClampUnitPosition(
+                        second.Position + direction * (overlap * 0.5f),
+                        second.Radius
+                    );
+                    bool canMoveFirst = IsPositionClear(
+                        firstCandidate,
+                        first.Radius,
+                        collisionObstacleCells
+                    );
+                    bool canMoveSecond = IsPositionClear(
+                        secondCandidate,
+                        second.Radius,
+                        collisionObstacleCells
+                    );
+
+                    if (canMoveFirst && canMoveSecond)
+                    {
+                        ApplyPosition(first, firstCandidate);
+                        ApplyPosition(second, secondCandidate);
+                    }
+                    else if (canMoveFirst)
+                    {
+                        Vector2 fullCandidate = ClampUnitPosition(
+                            first.Position - direction * overlap,
+                            first.Radius
+                        );
+
+                        if (IsPositionClear(
+                            fullCandidate,
+                            first.Radius,
+                            collisionObstacleCells
+                        ))
+                        {
+                            ApplyPosition(first, fullCandidate);
+                        }
+                    }
+                    else if (canMoveSecond)
+                    {
+                        Vector2 fullCandidate = ClampUnitPosition(
+                            second.Position + direction * overlap,
+                            second.Radius
+                        );
+
+                        if (IsPositionClear(
+                            fullCandidate,
+                            second.Radius,
+                            collisionObstacleCells
+                        ))
+                        {
+                            ApplyPosition(second, fullCandidate);
+                        }
+                    }
+                }
+            }
+
+            if (!foundOverlap)
+            {
+                break;
+            }
+        }
+    }
+
+    private void RebuildCollisionObstacleCells()
+    {
+        collisionObstacleCells.Clear();
+
+        foreach (Vector2Int occupiedCell in gridMap.OccupiedCells)
+        {
+            collisionObstacleCells.Add(occupiedCell);
+        }
+
+        foreach (UnitData unit in units)
+        {
+            if (unit != null)
+            {
+                collisionObstacleCells.Remove(unit.Cell);
             }
         }
     }
