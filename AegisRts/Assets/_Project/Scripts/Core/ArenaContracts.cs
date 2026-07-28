@@ -27,6 +27,7 @@ public sealed class ArenaEntityObservation
     public string ProductionKind;
     public float ProductionProgress;
     public ArenaCellObservation[] OccupiedCells;
+    public bool IsDeployed;
 }
 
 [Serializable]

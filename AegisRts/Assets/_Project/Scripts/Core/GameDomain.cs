@@ -123,6 +123,7 @@ internal sealed class UnitData
     public float AttackTimer;
     public float MoveSpeed;
     public float BuildingDamageMultiplier;
+    public bool IsDeployed;
     public BuildingData AttackTarget;
     public UnitData AttackUnitTarget;
 

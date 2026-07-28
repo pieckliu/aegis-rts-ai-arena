@@ -17,6 +17,7 @@ internal sealed class ArenaOrchestrator
     private readonly Action<List<UnitData>, BuildingData> attackBuilding;
     private readonly Func<BuildingData, bool> trainInfantry;
     private readonly Func<BuildingData, bool> trainArtillery;
+    private readonly Action<List<UnitData>, bool> setArtilleryDeployment;
     private readonly Func<Vector2Int, bool> buildFactory;
 
     public ArenaOrchestrator(
@@ -33,6 +34,7 @@ internal sealed class ArenaOrchestrator
         Action<List<UnitData>, BuildingData> attackBuildingAction,
         Func<BuildingData, bool> trainInfantryAction,
         Func<BuildingData, bool> trainArtilleryAction,
+        Action<List<UnitData>, bool> deploymentAction,
         Func<Vector2Int, bool> build
     )
     {
@@ -49,6 +51,7 @@ internal sealed class ArenaOrchestrator
         attackBuilding = attackBuildingAction;
         trainInfantry = trainInfantryAction;
         trainArtillery = trainArtilleryAction;
+        setArtilleryDeployment = deploymentAction;
         buildFactory = build;
     }
 
@@ -90,7 +93,8 @@ internal sealed class ArenaOrchestrator
                 unit.Position,
                 unit.Cell,
                 unit.HitPoints,
-                unit.MaxHitPoints
+                unit.MaxHitPoints,
+                isDeployed: unit.IsDeployed
             ));
         }
 
@@ -195,6 +199,25 @@ internal sealed class ArenaOrchestrator
             return ArenaActionResult.Reject("No player factory exists.");
         }
 
+        if (action.Type == "DeployArtillery" ||
+            action.Type == "UndeployArtillery")
+        {
+            List<UnitData> artilleryUnits = FindPlayerArtillery(action.UnitIds);
+
+            if (artilleryUnits.Count == 0)
+            {
+                return ArenaActionResult.Reject("No valid player artillery units.");
+            }
+
+            bool deploy = action.Type == "DeployArtillery";
+            setArtilleryDeployment(artilleryUnits, deploy);
+            return ArenaActionResult.Success(
+                deploy
+                    ? "Artillery deployment accepted."
+                    : "Artillery undeployment accepted."
+            );
+        }
+
         if (action.Type == "BuildFactory")
         {
             return buildFactory(new Vector2Int(action.CellX, action.CellY))
@@ -229,6 +252,13 @@ internal sealed class ArenaOrchestrator
         return result;
     }
 
+    private List<UnitData> FindPlayerArtillery(int[] ids)
+    {
+        List<UnitData> result = FindPlayerUnits(ids);
+        result.RemoveAll(unit => unit.Type != UnitType.Artillery);
+        return result;
+    }
+
     private static ArenaEntityObservation ToObservation(
         int id,
         string kind,
@@ -240,7 +270,8 @@ internal sealed class ArenaOrchestrator
         int queueCount = 0,
         float productionProgress = 0f,
         string productionKind = "",
-        IList<Vector2Int> occupiedCells = null
+        IList<Vector2Int> occupiedCells = null,
+        bool isDeployed = false
     )
     {
         ArenaCellObservation[] footprint = null;
@@ -273,7 +304,8 @@ internal sealed class ArenaOrchestrator
             QueueCount = queueCount,
             ProductionKind = productionKind,
             ProductionProgress = productionProgress,
-            OccupiedCells = footprint
+            OccupiedCells = footprint,
+            IsDeployed = isDeployed
         };
     }
 }

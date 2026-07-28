@@ -51,7 +51,9 @@ internal sealed class UnitMovementSystem
 
         foreach (UnitData unit in actors)
         {
-            if (unit == null || unit.Team != Team.Player)
+            if (unit == null ||
+                unit.Team != Team.Player ||
+                (unit.Type == UnitType.Artillery && unit.IsDeployed))
             {
                 continue;
             }
@@ -300,6 +302,12 @@ internal sealed class UnitMovementSystem
 
     public void MoveTowards(UnitData unit, Vector2 targetPosition, float deltaTime)
     {
+        if (unit == null ||
+            (unit.Type == UnitType.Artillery && unit.IsDeployed))
+        {
+            return;
+        }
+
         RebuildCollisionObstacleCells();
         Vector2 nextPosition = Vector2.MoveTowards(
             unit.Position,
@@ -318,6 +326,31 @@ internal sealed class UnitMovementSystem
 
         ApplyPosition(unit, nextPosition);
         SyncCombatCell(unit);
+    }
+
+    public void Stop(UnitData unit)
+    {
+        if (unit == null)
+        {
+            return;
+        }
+
+        gridMap.Release(unit.Cell);
+        Vector2Int currentCell = gridMap.WorldToCell(unit.Position);
+
+        if (!gridMap.TryOccupy(currentCell) &&
+            gridMap.TryFindOpenCellNear(currentCell, out Vector2Int openCell))
+        {
+            currentCell = openCell;
+            ApplyPosition(unit, gridMap.CellToWorld(openCell));
+            gridMap.TryOccupy(openCell);
+        }
+
+        unit.Cell = currentCell;
+        unit.TargetCell = currentCell;
+        unit.TargetPosition = unit.Position;
+        unit.Waypoints.Clear();
+        unit.IsMoving = false;
     }
 
     public void Tick(float deltaTime)

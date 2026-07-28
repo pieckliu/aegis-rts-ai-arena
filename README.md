@@ -27,10 +27,11 @@ Playable Unity vertical slice:
 
 - explore an expanded 48×48 battlefield that opens around the player base;
 - place 3×3-footprint bases and factories that block movement and constrain base layouts;
-- spend and regenerate resources, then train infantry or long-range artillery;
+- spend and regenerate resources, then train infantry or deployable long-range artillery;
 - use a shared ordered factory queue and wait when every footprint-adjacent exit is blocked;
 - select, box-select, drag friendly units to move, and command groups to attack;
 - move directly to exact clicked positions, keep unit volumes separated, and use grid detours around occupied structures;
+- deploy artillery to unlock firing and display its range, then undeploy it before moving again;
 - start focused directly on the player-base side of the battlefield, then pan and zoom the bounded camera;
 - explore a three-state fog of war driven by player building and unit sight;
 - use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;

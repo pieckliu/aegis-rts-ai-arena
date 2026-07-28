@@ -102,6 +102,7 @@ public class GameBootstrap : MonoBehaviour
     private GameObject placementPreviewObject;
 
     private GameObject selectionRingObject;
+    private GameObject artilleryRangeObject;
 
     private Vector2 basePosition;
     private Vector2 currentPreviewPosition;
@@ -153,6 +154,7 @@ public class GameBootstrap : MonoBehaviour
             CommandAttackBuilding,
             TryTrainInfantry,
             TryTrainArtillery,
+            SetArtilleryDeployment,
             TryBuildFactoryAtCell
         );
         lifecycle = new RtsEntityLifecycle(
@@ -177,6 +179,7 @@ public class GameBootstrap : MonoBehaviour
             CancelBuildMode,
             TrainSelectedFactory,
             TrainSelectedFactoryArtillery,
+            ToggleSelectedArtilleryDeployment,
             ResumeGame,
             RestartGame,
             ReturnToMainMenu,
@@ -361,6 +364,7 @@ public class GameBootstrap : MonoBehaviour
         CreateBuildRangeObject();
         CreatePlacementPreviewObject();
         CreateSelectionRingObject();
+        CreateArtilleryRangeObject();
         visibility = new RtsVisibilitySystem(
             gridMap,
             buildings,
@@ -433,6 +437,7 @@ public class GameBootstrap : MonoBehaviour
         selectedBuilding = BuildingType.None;
         hasPreviewCell = false;
         selectionRingObject = null;
+        artilleryRangeObject = null;
         placementPreviewObject = null;
         buildRangeObject = null;
         baseObject = null;
@@ -596,6 +601,20 @@ public class GameBootstrap : MonoBehaviour
         );
 
         selectionRingObject.SetActive(false);
+    }
+
+    private void CreateArtilleryRangeObject()
+    {
+        artilleryRangeObject = presentation.CreateCircle(
+            "ArtilleryRange",
+            Vector2.zero,
+            artilleryAttackRange,
+            new Color(0.8f, 0.35f, 1f, 0.09f),
+            14,
+            buildingRoot
+        );
+
+        artilleryRangeObject.SetActive(false);
     }
 
     private void SelectFactory()
@@ -903,6 +922,34 @@ public class GameBootstrap : MonoBehaviour
                 -0.15f
             );
         }
+
+        UpdateArtilleryRangeIndicator();
+    }
+
+    private void UpdateArtilleryRangeIndicator()
+    {
+        UnitData artillery = selectedUnits.Count == 1
+            ? selectedUnits[0]
+            : null;
+        bool showRange = artillery != null &&
+            artillery.Type == UnitType.Artillery &&
+            artillery.IsDeployed;
+
+        if (artilleryRangeObject == null)
+        {
+            return;
+        }
+
+        artilleryRangeObject.SetActive(showRange);
+
+        if (showRange)
+        {
+            artilleryRangeObject.transform.position = new Vector3(
+                artillery.Position.x,
+                artillery.Position.y,
+                0f
+            );
+        }
     }
 
     private void ClearSelectedBuilding()
@@ -1133,6 +1180,64 @@ public class GameBootstrap : MonoBehaviour
     private void TrainSelectedFactoryArtillery()
     {
         TryTrainArtillery(selectedBuildingData);
+    }
+
+    private void ToggleSelectedArtilleryDeployment()
+    {
+        List<UnitData> artilleryUnits = new List<UnitData>();
+        bool shouldDeploy = false;
+
+        foreach (UnitData unit in selectedUnits)
+        {
+            if (unit == null || unit.Type != UnitType.Artillery)
+            {
+                continue;
+            }
+
+            artilleryUnits.Add(unit);
+            shouldDeploy |= !unit.IsDeployed;
+        }
+
+        if (artilleryUnits.Count == 0)
+        {
+            return;
+        }
+
+        SetArtilleryDeployment(artilleryUnits, shouldDeploy);
+        ui.ShowNotification(
+            shouldDeploy
+                ? $"已部署 {artilleryUnits.Count} 门火炮"
+                : $"已取消部署 {artilleryUnits.Count} 门火炮"
+        );
+    }
+
+    private void SetArtilleryDeployment(
+        List<UnitData> artilleryUnits,
+        bool deployed
+    )
+    {
+        foreach (UnitData unit in artilleryUnits)
+        {
+            if (unit == null ||
+                unit.Team != Team.Player ||
+                unit.Type != UnitType.Artillery)
+            {
+                continue;
+            }
+
+            if (deployed)
+            {
+                movement.Stop(unit);
+            }
+
+            unit.IsDeployed = deployed;
+            presentation.SetCircleColor(
+                unit.GameObject,
+                deployed
+                    ? new Color(0.55f, 0.2f, 0.95f, 1f)
+                    : new Color(0.8f, 0.35f, 1f, 1f)
+            );
+        }
     }
 
     private void PlayCombatFeedback(CombatFeedbackEvent combatFeedback)
@@ -1445,7 +1550,7 @@ public class GameBootstrap : MonoBehaviour
             spawnPosition,
             spawnCell,
             artilleryRadius,
-            "火炮：远程攻城单位。移动缓慢、生命较低，但射程远并对建筑造成额外伤害。",
+            "火炮：未部署时可以移动但不能开火；部署后无法移动，可远程攻击并对建筑造成额外伤害。",
             Team.Player,
             playerArtilleryHitPoints,
             artilleryAttackDamage,

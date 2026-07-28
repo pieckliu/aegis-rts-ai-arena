@@ -149,11 +149,28 @@ public sealed class GameBootstrapPlayModeTests
 
         GameObject artillery = GameObject.Find("Artillery");
         Assert.IsNotNull(artillery, "The shared factory queue should produce artillery.");
-        Assert.AreEqual(
-            UnitType.Artillery.ToString(),
+        ArenaEntityObservation artilleryObservation = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Kind == UnitType.Artillery.ToString());
+        Assert.IsFalse(
+            artilleryObservation.IsDeployed,
+            "New artillery should begin mobile and undeployed."
+        );
+        Button deploymentButton = ui
+            .GetComponentsInChildren<Button>(true)
+            .First(button => button.name == "ToggleArtilleryDeployment");
+        Assert.IsNotNull(deploymentButton);
+        ArenaActionResult deployResult = bootstrap.ExecuteArenaAction(new ArenaAction
+        {
+            Type = "DeployArtillery",
+            UnitIds = new[] { artilleryObservation.Id }
+        });
+        Assert.IsTrue(deployResult.Accepted, deployResult.Message);
+        Assert.IsTrue(
             bootstrap.GetArenaObservation().Units
-                .First(unit => unit.Kind == UnitType.Artillery.ToString())
-                .Kind
+                .First(unit => unit.Id == artilleryObservation.Id)
+                .IsDeployed
         );
         Assert.IsNotNull(GameObject.Find("PlayerArtilleryMapDot"));
 

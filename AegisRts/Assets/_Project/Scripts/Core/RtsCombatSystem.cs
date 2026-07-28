@@ -94,10 +94,21 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) >
-            attacker.AttackRange + attacker.Radius + target.Radius)
+        bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
+            attacker.AttackRange + attacker.Radius + target.Radius;
+
+        if (!inRange)
         {
-            moveTowards(attacker, target.Position);
+            if (!RequiresStationaryDeployment(attacker))
+            {
+                moveTowards(attacker, target.Position);
+            }
+
+            return;
+        }
+
+        if (attacker.Type == UnitType.Artillery && !attacker.IsDeployed)
+        {
             return;
         }
 
@@ -136,10 +147,21 @@ internal sealed class RtsCombatSystem
             return;
         }
 
-        if (Vector2.Distance(attacker.Position, target.Position) >
-            attacker.AttackRange + attacker.Radius + target.Radius)
+        bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
+            attacker.AttackRange + attacker.Radius + target.Radius;
+
+        if (!inRange)
         {
-            moveTowards(attacker, target.Position);
+            if (!RequiresStationaryDeployment(attacker))
+            {
+                moveTowards(attacker, target.Position);
+            }
+
+            return;
+        }
+
+        if (attacker.Type == UnitType.Artillery && !attacker.IsDeployed)
+        {
             return;
         }
 
@@ -187,5 +209,10 @@ internal sealed class RtsCombatSystem
             damage,
             isLethal
         ));
+    }
+
+    private static bool RequiresStationaryDeployment(UnitData unit)
+    {
+        return unit.Type == UnitType.Artillery && unit.IsDeployed;
     }
 }

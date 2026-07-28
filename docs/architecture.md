@@ -19,7 +19,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsGameConfig` is the ScriptableObject source for map, economy, combat, production, AI, movement, and camera balance values.
 - `RtsSelectionInputController` owns click, empty-ground box selection, direct unit-drag movement, and command-input state.
 - `RtsEconomyProductionSystem` owns player resources, passive income, ordered mixed-unit factory queues, and per-unit production timing.
-- `RtsCombatSystem` owns target acquisition, pursuit, cooldowns, target-specific damage multipliers, and combat resolution.
+- `RtsCombatSystem` owns target acquisition, pursuit, artillery deployment firing rules, cooldowns, target-specific damage multipliers, and combat resolution.
 - `CombatFeedbackEvent` is the one-way boundary from deterministic combat resolution to presentation.
 - `RtsWorldFeedbackSystem` owns transient attack projectiles, hit flashes, and death pulses.
 - `RtsEntityLifecycle` owns entity removal, occupancy cleanup, target cleanup, and destruction callbacks.

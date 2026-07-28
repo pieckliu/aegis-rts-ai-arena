@@ -607,6 +607,40 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void CommandPanel_ShowsIndependentInfantryAndArtilleryQueueCounts()
+    {
+        BuildingData factory = new BuildingData(
+            "Factory",
+            BuildingType.Factory,
+            null,
+            Vector2.zero,
+            Vector2Int.zero,
+            1f,
+            string.Empty,
+            Team.Player,
+            100
+        );
+        factory.ProductionQueue.Add(UnitType.Infantry);
+
+        Assert.AreEqual(
+            "生产步兵 (1/5)",
+            RtsGameUIController.GetProductionButtonText(
+                factory,
+                UnitType.Infantry,
+                5
+            )
+        );
+        Assert.AreEqual(
+            "生产火炮 (0/5)",
+            RtsGameUIController.GetProductionButtonText(
+                factory,
+                UnitType.Artillery,
+                5
+            )
+        );
+    }
+
+    [Test]
     public void ArenaObservation_UsesSystemState()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
@@ -627,6 +661,7 @@ public sealed class RuntimeSystemsTests
             (_, _) => { },
             _ => false,
             _ => false,
+            (_, _) => { },
             _ => false
         );
 
@@ -767,8 +802,103 @@ public sealed class RuntimeSystemsTests
 
         combat.Tick(0.1f);
 
+        Assert.IsTrue(
+            buildings.Contains(target),
+            "Undeployed artillery must not fire."
+        );
+
+        artillery.IsDeployed = true;
+        combat.Tick(0.1f);
+
         Assert.IsFalse(buildings.Contains(target));
         Assert.IsTrue(footprint.TrueForAll(cell => !occupied.Contains(cell)));
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void Movement_RejectsCommandsForDeployedArtillery()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        GridMapService gridMap = new GridMapService(10, 1f);
+        Vector2Int startCell = new Vector2Int(2, 2);
+        UnitData artillery = new UnitData(
+            "Artillery",
+            UnitType.Artillery,
+            null,
+            gridMap.CellToWorld(startCell),
+            startCell,
+            config.ArtilleryRadius,
+            string.Empty,
+            Team.Player,
+            config.PlayerArtilleryHitPoints,
+            config.ArtilleryAttackDamage,
+            config.ArtilleryAttackRange,
+            config.ArtilleryAttackCooldown,
+            config.ArtilleryMoveSpeed,
+            config.ArtilleryBuildingDamageMultiplier
+        )
+        {
+            IsDeployed = true
+        };
+        gridMap.TryOccupy(startCell);
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { artillery }
+        );
+        Vector2 startPosition = artillery.Position;
+
+        Assert.AreEqual(0, movement.CommandGroupMove(
+            new List<UnitData> { artillery },
+            new Vector2Int(7, 7)
+        ));
+        movement.MoveTowards(artillery, Vector2.one * 4f, 1f);
+        Assert.AreEqual(startPosition, artillery.Position);
+        Assert.IsFalse(artillery.IsMoving);
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
+    public void Movement_StopCancelsArtilleryRouteAndReleasesDestination()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        GridMapService gridMap = new GridMapService(10, 1f);
+        Vector2Int startCell = new Vector2Int(2, 2);
+        UnitData artillery = new UnitData(
+            "Artillery",
+            UnitType.Artillery,
+            null,
+            gridMap.CellToWorld(startCell),
+            startCell,
+            config.ArtilleryRadius,
+            string.Empty,
+            Team.Player,
+            config.PlayerArtilleryHitPoints,
+            config.ArtilleryAttackDamage,
+            config.ArtilleryAttackRange,
+            config.ArtilleryAttackCooldown,
+            config.ArtilleryMoveSpeed,
+            config.ArtilleryBuildingDamageMultiplier
+        );
+        gridMap.TryOccupy(startCell);
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { artillery }
+        );
+        Vector2Int reservedDestination = new Vector2Int(7, 7);
+
+        Assert.AreEqual(1, movement.CommandGroupMove(
+            new List<UnitData> { artillery },
+            reservedDestination
+        ));
+        movement.Tick(0.2f);
+        movement.Stop(artillery);
+
+        Assert.IsFalse(artillery.IsMoving);
+        Assert.AreEqual(0, artillery.Waypoints.Count);
+        Assert.IsTrue(gridMap.IsOccupied(artillery.Cell));
+        Assert.IsFalse(gridMap.IsOccupied(reservedDestination));
         Object.DestroyImmediate(config);
     }
 
