@@ -731,7 +731,7 @@ public sealed class RuntimeSystemsTests
         factory.ProductionQueue.Add(UnitType.Infantry);
 
         Assert.AreEqual(
-            "生产步兵 (1/5)",
+            "TRAIN INFANTRY (1/5)",
             RtsGameUIController.GetProductionButtonText(
                 factory,
                 UnitType.Infantry,
@@ -739,7 +739,7 @@ public sealed class RuntimeSystemsTests
             )
         );
         Assert.AreEqual(
-            "生产火炮 (0/5)",
+            "TRAIN ARTILLERY (0/5)",
             RtsGameUIController.GetProductionButtonText(
                 factory,
                 UnitType.Artillery,

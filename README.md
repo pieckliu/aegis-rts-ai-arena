@@ -41,7 +41,7 @@ Playable Unity vertical slice:
 - optionally reset into a deterministic one-shot showcase containing moving infantry, a loaded garrison, deployed artillery, and an enemy contact group for screenshots and recordings;
 - inspect a live action log, current objective, showcase phase, damage, kills, orders, and enemy-wave telemetry without coupling UI state back into the simulation;
 - read player bases, factories, infantry, artillery, and enemies as distinct symbolic dots;
-- use a runtime uGUI menu, command panel, overlays, selection rectangle, and health bars;
+- use a consistent English-language runtime presentation across the uGUI menu, command panel, notifications, world labels, overlays, and Arena Inspector;
 - fight an automatically spawning enemy army;
 - win, lose, pause, restart, and return to the menu;
 - query structured match observations and submit agent actions through the Arena API.

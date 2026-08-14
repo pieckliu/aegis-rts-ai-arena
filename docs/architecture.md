@@ -54,6 +54,10 @@ selection/targets, and tactical state deliberately expose ground truth for debug
 demonstrations. Opening it changes only the camera viewport and UI; it does not modify simulation
 or Arena API state.
 
+All player-facing runtime text uses English, including symbolic world labels, command-panel copy,
+notifications, pause/results overlays, and Inspector controls. This keeps normal gameplay and the
+portfolio showcase visually consistent without changing simulation data or agent contracts.
+
 The Inspector's explicit showcase button is the exception: it resets the current match and prepares a marked, deterministic one-shot debug
 scenario with representative unit states so every channel contains useful portfolio-demo data. It
 is never triggered during a normal match unless the player presses the button.

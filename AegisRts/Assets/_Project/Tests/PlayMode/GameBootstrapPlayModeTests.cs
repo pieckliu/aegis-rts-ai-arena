@@ -28,7 +28,7 @@ public sealed class GameBootstrapPlayModeTests
         GameObject playerBase = GameObject.Find("Base");
         Assert.IsNotNull(playerBase);
         Assert.IsNotNull(playerBase.GetComponent<SpriteRenderer>()?.sprite);
-        Assert.AreEqual("基地", playerBase.GetComponentInChildren<TextMesh>()?.text);
+        Assert.AreEqual("HQ", playerBase.GetComponentInChildren<TextMesh>()?.text);
         Assert.IsNull(playerBase.GetComponent<RtsEntityViewAnimator>());
         Assert.IsNotNull(GameObject.Find("FogOfWar"));
         Assert.IsNotNull(GameObject.Find("Minimap"));

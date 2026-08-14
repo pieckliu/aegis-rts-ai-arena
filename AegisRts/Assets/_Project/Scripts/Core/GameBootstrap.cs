@@ -506,7 +506,7 @@ public class GameBootstrap : MonoBehaviour
         float half = gridMap.HalfSize;
 
         basePosition = new Vector2(
-            half - cellSize * 5f,   //已修改基地的位置坐标
+            half - cellSize * 5f,   // Keep the opening camera focused on the player base.
             half - cellSize * 5f
         );
 
@@ -525,18 +525,18 @@ public class GameBootstrap : MonoBehaviour
             new Color(0.25f, 0.55f, 1f, 1f),
             20,
             buildingRoot,
-            "基地",
+            "HQ",
             Color.white
         );
 
         playerBaseData = new BuildingData(
-            "基地",
+            "Player Base",
             BuildingType.Base,
             baseObject,
             basePosition,
             baseCell,
             baseRadius,
-            "主基地：后续用于建造建筑和管理资源。",
+            "Primary headquarters for construction and resource management.",
             Team.Player,
             playerBaseHitPoints,
             baseFootprint
@@ -578,13 +578,13 @@ public class GameBootstrap : MonoBehaviour
         );
 
         enemyBaseData = new BuildingData(
-            "AI基地",
+            "AI Base",
             BuildingType.Base,
             enemyBaseObject,
             enemyBasePosition,
             enemyBaseCell,
             baseRadius,
-            "敌方 AI 基地：摧毁它即可获得胜利。",
+            "Enemy AI headquarters. Destroy it to win the match.",
             Team.Enemy,
             enemyBaseHitPoints,
             enemyBaseFootprint
@@ -658,7 +658,7 @@ public class GameBootstrap : MonoBehaviour
         if (!placement.CanAfford(BuildingType.Factory))
         {
             Debug.LogWarning($"Cannot select Factory: not enough resources. Need {factoryCost}, have {economy.Resources}.");
-            ui.ShowNotification($"资源不足：建造兵厂需要 {factoryCost}", true);
+            ui.ShowNotification($"Not enough resources. A factory costs {factoryCost}.", true);
             return;
         }
 
@@ -675,7 +675,7 @@ public class GameBootstrap : MonoBehaviour
             placementPreviewObject.SetActive(true);
         }
 
-        Debug.Log("Selected building: Factory / 兵厂");
+        Debug.Log("Selected building: Factory.");
     }
 
     private void SelectGarrison()
@@ -685,7 +685,7 @@ public class GameBootstrap : MonoBehaviour
             Debug.LogWarning(
                 $"Cannot select Garrison: not enough resources. Need {garrisonCost}, have {economy.Resources}."
             );
-            ui.ShowNotification($"资源不足：建造驻防建筑需要 {garrisonCost}", true);
+            ui.ShowNotification($"Not enough resources. A garrison costs {garrisonCost}.", true);
             return;
         }
 
@@ -1198,13 +1198,13 @@ public class GameBootstrap : MonoBehaviour
         );
 
         UnitData enemyInfantry = new UnitData(
-            "敌方步兵",
+            "Enemy Infantry",
             UnitType.Infantry,
             enemyInfantryObject,
             spawnPosition,
             spawnCell,
             infantryRadius,
-            "敌方步兵：由 AI 基地自动生产，会优先攻击附近玩家步兵，否则攻击玩家基地。",
+            "AI infantry attacks nearby player units first, then advances on the player base.",
             Team.Enemy,
             enemyInfantryHitPoints,
             enemyInfantryAttackDamage,
@@ -1310,13 +1310,13 @@ public class GameBootstrap : MonoBehaviour
     {
         if (gameState != GameState.Playing || gameWon || gameLost)
         {
-            ui.ShowNotification("请先开始一局游戏", true);
+            ui.ShowNotification("Start a match before running the showcase.", true);
             return;
         }
 
         if (inspectorDemoPrepared)
         {
-            ui.ShowNotification("演示态已经生成");
+            ui.ShowNotification("The showcase scenario is already active.");
             return;
         }
 
@@ -1447,7 +1447,7 @@ public class GameBootstrap : MonoBehaviour
         telemetry.RecordWave(CountUnits(Team.Enemy));
         visibility?.Tick(0f);
         cameraController.CenterOnWorld(Vector2.Lerp(basePosition, combatPosition, 0.45f));
-        ui.ShowNotification("演示态已生成：移动、驻防、火炮和敌军状态已就绪");
+        ui.ShowNotification("Showcase ready: movement, garrison, artillery and enemy contact are active.");
         yield return new WaitForSeconds(1.2f);
         telemetry.SetDemoPhase("06 LIVE ENGAGEMENT");
         telemetry.SetObjective("Hold the garrison and eliminate the contact group");
@@ -1500,8 +1500,8 @@ public class GameBootstrap : MonoBehaviour
         SetArtilleryDeployment(artilleryUnits, shouldDeploy);
         ui.ShowNotification(
             shouldDeploy
-                ? $"已部署 {artilleryUnits.Count} 门火炮"
-                : $"已取消部署 {artilleryUnits.Count} 门火炮"
+                ? $"Deployed {artilleryUnits.Count} artillery unit(s)."
+                : $"Undeployed {artilleryUnits.Count} artillery unit(s)."
         );
     }
 
@@ -1613,13 +1613,13 @@ public class GameBootstrap : MonoBehaviour
                 Team.Player
             );
             ui.ShowNotification(
-                $"已命令 {orderedCount} 名步兵进入驻防建筑"
+                $"Ordered {orderedCount} infantry unit(s) into the garrison."
             );
         }
         else
         {
             ui.ShowNotification(
-                $"无法驻防：仅步兵可以进入，容量 {targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}",
+                $"Cannot garrison: infantry only. Capacity {targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}.",
                 true
             );
         }
@@ -1726,7 +1726,7 @@ public class GameBootstrap : MonoBehaviour
 
         if (evacuatedCount == 0)
         {
-            ui.ShowNotification("驻防建筑内没有可撤出的步兵", true);
+            ui.ShowNotification("No infantry can currently evacuate this garrison.", true);
         }
     }
 
@@ -1782,7 +1782,7 @@ public class GameBootstrap : MonoBehaviour
                 $"EVACUATE P#{building.Id}  UNITS {evacuatedCount:00}",
                 Team.Player
             );
-            ui.ShowNotification($"已撤出 {evacuatedCount} 名驻防步兵");
+            ui.ShowNotification($"Evacuated {evacuatedCount} infantry unit(s).");
         }
 
         return evacuatedCount;
@@ -1979,17 +1979,17 @@ public class GameBootstrap : MonoBehaviour
             {
                 Debug.LogWarning($"Cannot build: not enough resources. Need {placement.GetCost(selectedBuilding)}, have {economy.Resources}.");
                 string buildingName = selectedBuilding == BuildingType.Garrison
-                    ? "驻防建筑"
-                    : "兵厂";
+                    ? "garrison"
+                    : "factory";
                 ui.ShowNotification(
-                    $"资源不足：建造{buildingName}需要 {placement.GetCost(selectedBuilding)}",
+                    $"Not enough resources. A {buildingName} costs {placement.GetCost(selectedBuilding)}.",
                     true
                 );
             }
             else
             {
                 Debug.LogWarning("Cannot build here: out of range or cell is occupied.");
-                ui.ShowNotification("无法建造：位置超出范围或格子已被占用", true);
+                ui.ShowNotification("Cannot build here: out of range or grid area occupied.", true);
             }
 
             return;
@@ -2020,18 +2020,18 @@ public class GameBootstrap : MonoBehaviour
             new Color(0.35f, 0.9f, 0.45f, 1f),
             20,
             buildingRoot,
-            "兵厂",
+            "FAC",
             Color.black
         );
 
         BuildingData factory = new BuildingData(
-            "兵厂",
+            "Factory",
             BuildingType.Factory,
             factoryObject,
             position,
             cell,
             buildingRadius,
-            "兵厂：占据 3×3 网格，使用共享队列生产步兵和火炮。",
+            "Production structure occupying a 3x3 grid area. Its shared queue trains infantry and artillery.",
             Team.Player,
             factoryHitPoints,
             placement.GetFootprint(BuildingType.Factory, cell)
@@ -2041,7 +2041,7 @@ public class GameBootstrap : MonoBehaviour
         telemetry.RecordBuilding(factory);
         
         Debug.Log($"Factory built at cell {cell}. Remaining resources: {economy.Resources}");
-        ui.ShowNotification("兵厂建造完成");
+        ui.ShowNotification("Factory construction complete.");
         return true;
     }
 
@@ -2049,25 +2049,25 @@ public class GameBootstrap : MonoBehaviour
     {
         if (factory == null || factory.Type != BuildingType.Factory)
         {
-            ui.ShowNotification("请先选择一座兵厂", true);
+            ui.ShowNotification("Select a factory first.", true);
             return false;
         }
 
         if (factory.ProductionQueueCount >= maxFactoryQueueSize)
         {
-            ui.ShowNotification("生产队列已满", true);
+            ui.ShowNotification("The production queue is full.", true);
             return false;
         }
 
         if (!economy.CanAfford(infantryCost))
         {
-            ui.ShowNotification($"资源不足：生产步兵需要 {infantryCost}", true);
+            ui.ShowNotification($"Not enough resources. Infantry costs {infantryCost}.", true);
             return false;
         }
 
         if (!economy.TryQueueInfantry(factory))
         {
-            ui.ShowNotification("步兵生产请求未被接受", true);
+            ui.ShowNotification("The infantry production request was rejected.", true);
             return false;
         }
 
@@ -2077,7 +2077,7 @@ public class GameBootstrap : MonoBehaviour
             Team.Player
         );
 
-        ui.ShowNotification($"步兵已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
+        ui.ShowNotification($"Infantry queued ({factory.ProductionQueueCount}/{maxFactoryQueueSize}).");
         return true;
     }
 
@@ -2101,18 +2101,18 @@ public class GameBootstrap : MonoBehaviour
             new Color(0.15f, 0.8f, 0.85f, 1f),
             20,
             buildingRoot,
-            "驻",
+            "GAR",
             Color.black
         );
 
         BuildingData garrison = new BuildingData(
-            "驻防建筑",
+            "Garrison",
             BuildingType.Garrison,
             garrisonObject,
             position,
             cell,
             buildingRadius,
-            $"驻防建筑：选中步兵后右键建筑进入，最多容纳 {garrisonCapacity} 名；驻防步兵攻击伤害提高 {Mathf.RoundToInt((garrisonDamageMultiplier - 1f) * 100f)}%。",
+            $"Defensive position for up to {garrisonCapacity} infantry. Right-click with infantry selected to enter; garrisoned damage increases by {Mathf.RoundToInt((garrisonDamageMultiplier - 1f) * 100f)}%.",
             Team.Player,
             garrisonHitPoints,
             placement.GetFootprint(BuildingType.Garrison, cell)
@@ -2128,7 +2128,7 @@ public class GameBootstrap : MonoBehaviour
         Debug.Log(
             $"Garrison built at cell {cell}. Remaining resources: {economy.Resources}"
         );
-        ui.ShowNotification("驻防建筑建造完成");
+        ui.ShowNotification("Garrison construction complete.");
         return true;
     }
 
@@ -2136,25 +2136,25 @@ public class GameBootstrap : MonoBehaviour
     {
         if (factory == null || factory.Type != BuildingType.Factory)
         {
-            ui.ShowNotification("请先选择一座兵厂", true);
+            ui.ShowNotification("Select a factory first.", true);
             return false;
         }
 
         if (factory.ProductionQueueCount >= maxFactoryQueueSize)
         {
-            ui.ShowNotification("生产队列已满", true);
+            ui.ShowNotification("The production queue is full.", true);
             return false;
         }
 
         if (!economy.CanAfford(artilleryCost))
         {
-            ui.ShowNotification($"资源不足：生产火炮需要 {artilleryCost}", true);
+            ui.ShowNotification($"Not enough resources. Artillery costs {artilleryCost}.", true);
             return false;
         }
 
         if (!economy.TryQueueArtillery(factory))
         {
-            ui.ShowNotification("火炮生产请求未被接受", true);
+            ui.ShowNotification("The artillery production request was rejected.", true);
             return false;
         }
 
@@ -2164,7 +2164,7 @@ public class GameBootstrap : MonoBehaviour
             Team.Player
         );
 
-        ui.ShowNotification($"火炮已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
+        ui.ShowNotification($"Artillery queued ({factory.ProductionQueueCount}/{maxFactoryQueueSize}).");
         return true;
     }
 
@@ -2204,13 +2204,13 @@ public class GameBootstrap : MonoBehaviour
         );
 
         UnitData infantry = new UnitData(
-            "步兵",
+            "Infantry",
             UnitType.Infantry,
             infantryObject,
             spawnPosition,
             spawnCell,
             infantryRadius,
-            "步兵：基础作战单位。当前版本支持左键选中、右键移动、攻击敌方建筑和敌方单位。",
+            "Basic combat unit. Left-click to select; right-click to move or attack enemy units and structures.",
             Team.Player,
             playerInfantryHitPoints,
             infantryAttackDamage,
@@ -2243,13 +2243,13 @@ public class GameBootstrap : MonoBehaviour
         );
 
         UnitData artillery = new UnitData(
-            "火炮",
+            "Artillery",
             UnitType.Artillery,
             artilleryObject,
             spawnPosition,
             spawnCell,
             artilleryRadius,
-            "火炮：未部署时可以移动但不能开火；部署后无法移动，可远程攻击并对建筑造成额外伤害。",
+            "Mobile while undeployed but unable to fire. Deploy for long-range attacks and bonus structure damage.",
             Team.Player,
             playerArtilleryHitPoints,
             artilleryAttackDamage,
