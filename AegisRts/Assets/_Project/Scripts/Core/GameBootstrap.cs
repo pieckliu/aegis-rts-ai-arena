@@ -110,6 +110,7 @@ public class GameBootstrap : MonoBehaviour
 
     private Vector2 basePosition;
     private Vector2 currentPreviewPosition;
+    private bool inspectorDemoPrepared;
     private Vector2Int currentPreviewCell;
 
     private bool hasPreviewCell = false;
@@ -189,6 +190,8 @@ public class GameBootstrap : MonoBehaviour
             TrainSelectedFactoryArtillery,
             ToggleSelectedArtilleryDeployment,
             EvacuateSelectedGarrison,
+            ToggleArenaInspector,
+            PrepareInspectorDemo,
             ResumeGame,
             RestartGame,
             ReturnToMainMenu,
@@ -372,6 +375,7 @@ public class GameBootstrap : MonoBehaviour
         gameLost = false;
         matchTime = 0f;
         nextEntityId = 1;
+        inspectorDemoPrepared = false;
 
         gridRoot = new GameObject("GridRoot").transform;
         buildingRoot = new GameObject("BuildingRoot").transform;
@@ -1245,7 +1249,151 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        bool opening = !ui.IsInspectorVisible;
         ui.ToggleInspector(mainCamera);
+
+        if (opening)
+        {
+            cameraController.CenterOnWorld(GetInspectorFocusPosition());
+        }
+    }
+
+    private Vector2 GetInspectorFocusPosition()
+    {
+        if (selectedUnits.Count > 0)
+        {
+            Vector2 center = Vector2.zero;
+
+            foreach (UnitData unit in selectedUnits)
+            {
+                center += unit.Position;
+            }
+
+            return center / selectedUnits.Count;
+        }
+
+        if (selectedBuildingData != null)
+        {
+            return selectedBuildingData.Position;
+        }
+
+        return playerBaseData != null ? playerBaseData.Position : basePosition;
+    }
+
+    public void PrepareInspectorDemo()
+    {
+        if (gameState != GameState.Playing || gameWon || gameLost)
+        {
+            ui.ShowNotification("请先开始一局游戏", true);
+            return;
+        }
+
+        if (inspectorDemoPrepared)
+        {
+            ui.ShowNotification("演示态已经生成");
+            return;
+        }
+
+        BuildingData factory = FindPlayerBuilding(BuildingType.Factory);
+        BuildingData garrison = FindPlayerBuilding(BuildingType.Garrison);
+
+        if (factory == null)
+        {
+            Vector2Int factoryCell = playerBaseData.Cell + Vector2Int.left * 4;
+            BuildFactory(gridMap.CellToWorld(factoryCell), factoryCell);
+            factory = FindPlayerBuilding(BuildingType.Factory);
+        }
+
+        if (garrison == null)
+        {
+            Vector2Int garrisonCell = playerBaseData.Cell + Vector2Int.down * 4;
+            BuildGarrison(gridMap.CellToWorld(garrisonCell), garrisonCell);
+            garrison = FindPlayerBuilding(BuildingType.Garrison);
+        }
+
+        Vector2Int playerOrigin = factory != null
+            ? factory.Cell
+            : playerBaseData.Cell;
+        List<UnitData> demoInfantry = new List<UnitData>();
+
+        for (int index = 0; index < 6; index++)
+        {
+            if (!gridMap.TryFindOpenCellNear(playerOrigin, out Vector2Int spawnCell))
+            {
+                break;
+            }
+
+            SpawnPlayerInfantry(spawnCell);
+            demoInfantry.Add(units[units.Count - 1]);
+        }
+
+        for (int index = 0; index < 2; index++)
+        {
+            if (!gridMap.TryFindOpenCellNear(playerOrigin, out Vector2Int spawnCell))
+            {
+                break;
+            }
+
+            SpawnPlayerArtillery(spawnCell);
+            units[units.Count - 1].IsDeployed = index == 0;
+        }
+
+        if (garrison != null)
+        {
+            int garrisonCount = Mathf.Min(2, demoInfantry.Count);
+
+            for (int index = 0; index < garrisonCount; index++)
+            {
+                EnterGarrison(demoInfantry[index], garrison);
+            }
+        }
+
+        Vector2 combatPosition = Vector2.Lerp(basePosition, Vector2.zero, 0.38f);
+        Vector2Int combatCell = gridMap.WorldToCell(combatPosition);
+        List<UnitData> movingInfantry = new List<UnitData>();
+
+        for (int index = 0; index < demoInfantry.Count; index++)
+        {
+            UnitData infantry = demoInfantry[index];
+
+            if (infantry.GarrisonBuilding == null && movingInfantry.Count < 3)
+            {
+                movingInfantry.Add(infantry);
+            }
+        }
+
+        movement.CommandGroupMove(movingInfantry, combatCell, combatPosition);
+        SelectMultipleUnits(movingInfantry);
+
+        for (int index = 0; index < 7; index++)
+        {
+            if (!gridMap.TryFindOpenCellNear(combatCell, out Vector2Int spawnCell))
+            {
+                break;
+            }
+
+            UnitData enemy = CreateEnemyInfantry(spawnCell);
+            enemy.AttackTarget = playerBaseData;
+            enemy.IsMoving = false;
+        }
+
+        inspectorDemoPrepared = true;
+        visibility?.Tick(0f);
+        cameraController.CenterOnWorld(Vector2.Lerp(basePosition, combatPosition, 0.45f));
+        ui.ShowNotification("演示态已生成：移动、驻防、火炮和敌军状态已就绪");
+    }
+
+    private BuildingData FindPlayerBuilding(BuildingType type)
+    {
+        foreach (BuildingData building in buildings)
+        {
+            if (building != null && building.Team == Team.Player && building.Type == type)
+            {
+                return building;
+            }
+        }
+
+        return null;
     }
 
     private void TrainSelectedFactory()

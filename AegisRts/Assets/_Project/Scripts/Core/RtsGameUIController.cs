@@ -61,6 +61,7 @@ internal sealed class RtsGameUIController
     private readonly RawImage minimapFog;
     private readonly RectTransform minimapViewport;
     private readonly GameObject inspectorPanel;
+    private readonly Button inspectorToggleButton;
     private readonly Text inspectorMetricsText;
     private readonly Text inspectorStateText;
     private readonly List<InspectorChannel> inspectorChannels =
@@ -83,6 +84,8 @@ internal sealed class RtsGameUIController
         Action trainArtillery,
         Action toggleArtilleryDeployment,
         Action evacuateGarrison,
+        Action toggleInspector,
+        Action prepareInspectorDemo,
         Action resume,
         Action restart,
         Action returnToMenu,
@@ -232,7 +235,20 @@ internal sealed class RtsGameUIController
         selection.GetComponent<Image>().raycastTarget = false;
         selection.SetActive(false);
 
-        inspectorPanel = CreateInspectorPanel(hudPanel.transform);
+        inspectorToggleButton = CreateButton(
+            "ToggleArenaInspector",
+            hudPanel.transform,
+            "AI 观测台  F2",
+            new Vector2(0.655f, 0.935f),
+            new Vector2(0.78f, 0.982f),
+            toggleInspector
+        );
+        inspectorToggleButton.GetComponentInChildren<Text>().fontSize = 16;
+        inspectorPanel = CreateInspectorPanel(
+            hudPanel.transform,
+            toggleInspector,
+            prepareInspectorDemo
+        );
         inspectorMetricsText = inspectorPanel.transform
             .Find("InspectorMetrics")
             .GetComponent<Text>();
@@ -461,12 +477,25 @@ internal sealed class RtsGameUIController
         inspectorCamera = camera;
         inspectorPanel.SetActive(visible);
         commandPanel.SetActive(!visible);
+        inspectorToggleButton.gameObject.SetActive(!visible);
 
         if (camera != null)
         {
             camera.rect = visible
                 ? new Rect(0f, 0f, InspectorViewportWidth, 1f)
                 : new Rect(0f, 0f, 1f, 1f);
+
+            if (visible)
+            {
+                camera.aspect = Mathf.Max(
+                    0.01f,
+                    Screen.width * InspectorViewportWidth / Mathf.Max(1f, Screen.height)
+                );
+            }
+            else
+            {
+                camera.ResetAspect();
+            }
         }
 
         nextInspectorRefreshTime = 0f;
@@ -477,6 +506,7 @@ internal sealed class RtsGameUIController
         if (inspectorCamera != null)
         {
             inspectorCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            inspectorCamera.ResetAspect();
         }
 
         ClearHealthViews();
@@ -926,7 +956,11 @@ internal sealed class RtsGameUIController
         healthViews.Clear();
     }
 
-    private GameObject CreateInspectorPanel(Transform parent)
+    private GameObject CreateInspectorPanel(
+        Transform parent,
+        Action toggleInspector,
+        Action prepareInspectorDemo
+    )
     {
         GameObject root = CreatePanel(
             "ArenaInspector",
@@ -939,26 +973,34 @@ internal sealed class RtsGameUIController
             "InspectorTitle",
             root.transform,
             "AEGIS // ARENA OBSERVABILITY",
-            24,
+            26,
             TextAnchor.MiddleLeft,
             new Vector2(0.025f, 0.93f),
-            new Vector2(0.73f, 0.985f)
+            new Vector2(0.61f, 0.985f)
         ).color = new Color(0.35f, 0.88f, 1f, 1f);
-        Text hint = CreateText(
-            "InspectorHint",
+        Button demoButton = CreateButton(
+            "PrepareInspectorDemo",
             root.transform,
-            "F2  CLOSE   •   LIVE TELEMETRY",
-            13,
-            TextAnchor.MiddleRight,
-            new Vector2(0.68f, 0.935f),
-            new Vector2(0.975f, 0.98f)
+            "生成演示态",
+            new Vector2(0.62f, 0.94f),
+            new Vector2(0.79f, 0.98f),
+            prepareInspectorDemo
         );
-        hint.color = new Color(0.55f, 0.64f, 0.7f, 1f);
+        demoButton.GetComponentInChildren<Text>().fontSize = 14;
+        Button closeButton = CreateButton(
+            "CloseArenaInspector",
+            root.transform,
+            "关闭  F2",
+            new Vector2(0.81f, 0.94f),
+            new Vector2(0.975f, 0.98f),
+            toggleInspector
+        );
+        closeButton.GetComponentInChildren<Text>().fontSize = 14;
         CreateText(
             "InspectorMetrics",
             root.transform,
             string.Empty,
-            14,
+            15,
             TextAnchor.MiddleLeft,
             new Vector2(0.025f, 0.865f),
             new Vector2(0.975f, 0.93f)
@@ -993,7 +1035,7 @@ internal sealed class RtsGameUIController
             "InspectorState",
             root.transform,
             string.Empty,
-            14,
+            15,
             TextAnchor.UpperLeft,
             new Vector2(0.025f, 0.025f),
             new Vector2(0.975f, 0.275f)
@@ -1015,11 +1057,14 @@ internal sealed class RtsGameUIController
             max,
             new Color(0.032f, 0.052f, 0.068f, 1f)
         );
+        Outline outline = card.AddComponent<Outline>();
+        outline.effectColor = new Color(0.12f, 0.34f, 0.43f, 0.75f);
+        outline.effectDistance = new Vector2(1f, -1f);
         Text label = CreateText(
             "Title",
             card.transform,
             title,
-            13,
+            15,
             TextAnchor.MiddleLeft,
             new Vector2(0.055f, 0.84f),
             new Vector2(0.95f, 0.98f)
@@ -1066,6 +1111,7 @@ internal sealed class RtsGameUIController
         for (int index = 1; index < inspectorChannels.Count; index++)
         {
             FillInspectorChannel(inspectorChannels[index], new Color(0.018f, 0.026f, 0.034f, 1f));
+            PaintInspectorGrid(inspectorChannels[index]);
         }
 
         int playerUnits = 0;
@@ -1165,12 +1211,24 @@ internal sealed class RtsGameUIController
 
                 if (unit.IsMoving)
                 {
+                    PaintLine(
+                        inspectorChannels[4],
+                        unit.Cell,
+                        unit.TargetCell,
+                        new Color(0.1f, 0.45f, 0.65f, 1f)
+                    );
                     PaintCell(inspectorChannels[4], unit.TargetCell, new Color(0.15f, 0.75f, 1f, 1f), 1);
                 }
             }
 
             if (unit.AttackTarget != null)
             {
+                PaintLine(
+                    inspectorChannels[4],
+                    unit.Cell,
+                    unit.AttackTarget.Cell,
+                    new Color(0.75f, 0.12f, 0.08f, 1f)
+                );
                 PaintCells(
                     inspectorChannels[4],
                     unit.AttackTarget.OccupiedCells,
@@ -1180,6 +1238,12 @@ internal sealed class RtsGameUIController
 
             if (unit.AttackUnitTarget != null)
             {
+                PaintLine(
+                    inspectorChannels[4],
+                    unit.Cell,
+                    unit.AttackUnitTarget.Cell,
+                    new Color(0.75f, 0.12f, 0.08f, 1f)
+                );
                 PaintCell(
                     inspectorChannels[4],
                     unit.AttackUnitTarget.Cell,
@@ -1199,6 +1263,17 @@ internal sealed class RtsGameUIController
                         : unit.IsMoving
                             ? new Color(0.2f, 0.75f, 1f, 1f)
                             : new Color(0.25f, 0.34f, 0.4f, 1f);
+
+            if (unit.IsMoving)
+            {
+                PaintLine(
+                    inspectorChannels[5],
+                    unit.Cell,
+                    unit.TargetCell,
+                    new Color(0.08f, 0.32f, 0.45f, 1f)
+                );
+            }
+
             PaintCell(inspectorChannels[5], unit.Cell, tacticalColor, 1);
         }
 
@@ -1217,7 +1292,9 @@ internal sealed class RtsGameUIController
             "SIMULATION STATE  //  GROUND-TRUTH DEBUG VIEW\n" +
             $"PLAYER UNITS  {playerUnits:00}     ENEMY UNITS  {enemyUnits:00}     SELECTED  {selectedUnits.Count:00}     QUEUED  {queuedUnits:00}\n" +
             $"MOVING  {movingUnits:00}     ENGAGED  {engagedUnits:00}     ARTILLERY DEPLOYED  {deployedArtillery:00}     GARRISONED  {garrisonedUnits:00}\n\n" +
-            "LEGEND   PLAYER ■   ENEMY ■   ARTILLERY ■   GARRISON ■   SELECTED ■\n" +
+            "LEGEND   <color=#FFE61F>PLAYER ■</color>   <color=#FF4C1F>ENEMY ■</color>   " +
+            "<color=#CC59FF>ARTILLERY ■</color>   <color=#19E5D6>GARRISON ■</color>   " +
+            "<color=#FFFFFF>SELECTED ■</color>\n" +
             "NOTE     Visibility is agent-observable; remaining channels expose simulation truth for debugging.";
     }
 
@@ -1272,6 +1349,26 @@ internal sealed class RtsGameUIController
         }
     }
 
+    private static void PaintInspectorGrid(InspectorChannel channel)
+    {
+        if (channel.Texture == null || channel.Pixels == null)
+        {
+            return;
+        }
+
+        Color gridColor = new Color(0.055f, 0.085f, 0.105f, 1f);
+        int step = Mathf.Max(4, channel.Texture.width / 6);
+
+        for (int coordinate = step; coordinate < channel.Texture.width; coordinate += step)
+        {
+            for (int offset = 0; offset < channel.Texture.height; offset++)
+            {
+                channel.Pixels[offset * channel.Texture.width + coordinate] = gridColor;
+                channel.Pixels[coordinate * channel.Texture.width + offset] = gridColor;
+            }
+        }
+    }
+
     private static void PaintCells(
         InspectorChannel channel,
         IEnumerable<Vector2Int> cells,
@@ -1306,6 +1403,46 @@ internal sealed class RtsGameUIController
                 }
 
                 channel.Pixels[y * channel.Texture.width + x] = color;
+            }
+        }
+    }
+
+    private static void PaintLine(
+        InspectorChannel channel,
+        Vector2Int start,
+        Vector2Int end,
+        Color color
+    )
+    {
+        int x = start.x;
+        int y = start.y;
+        int deltaX = Mathf.Abs(end.x - start.x);
+        int deltaY = -Mathf.Abs(end.y - start.y);
+        int stepX = start.x < end.x ? 1 : -1;
+        int stepY = start.y < end.y ? 1 : -1;
+        int error = deltaX + deltaY;
+
+        while (true)
+        {
+            PaintCell(channel, new Vector2Int(x, y), color);
+
+            if (x == end.x && y == end.y)
+            {
+                break;
+            }
+
+            int doubledError = error * 2;
+
+            if (doubledError >= deltaY)
+            {
+                error += deltaY;
+                x += stepX;
+            }
+
+            if (doubledError <= deltaX)
+            {
+                error += deltaX;
+                y += stepY;
             }
         }
     }

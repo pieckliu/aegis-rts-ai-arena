@@ -53,6 +53,10 @@ selection/targets, and tactical state deliberately expose ground truth for debug
 demonstrations. Opening it changes only the camera viewport and UI; it does not modify simulation
 or Arena API state.
 
+The Inspector's explicit showcase button is the exception: it prepares a marked, one-shot debug
+scenario with representative unit states so every channel contains useful portfolio-demo data. It
+is never triggered during a normal match unless the player presses the button.
+
 Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue. Garrison capacity, occupants, and entry/evacuation actions are exposed through the Arena contract.
 
 Authored art and audio provenance is documented in `docs/art-audio-assets.md`. Enemy strategy can
