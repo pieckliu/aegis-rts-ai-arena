@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -82,6 +83,7 @@ public class GameBootstrap : MonoBehaviour
     private EnemyAISystem enemyAI;
     private EntityPresentationFactory presentation;
     private ArenaOrchestrator arena;
+    private ArenaTelemetrySystem telemetry;
     private RtsEntityLifecycle lifecycle;
     private RtsCombatSystem combat;
     private RtsWorldFeedbackSystem feedback;
@@ -140,6 +142,7 @@ public class GameBootstrap : MonoBehaviour
 
         ApplyGameConfig();
         economy = new RtsEconomyProductionSystem(gameConfig);
+        telemetry = new ArenaTelemetrySystem(() => matchTime);
         gridMap = new GridMapService(mapSize, cellSize);
         placement = new BuildingPlacementSystem(gameConfig, economy, gridMap);
         movement = new UnitMovementSystem(gameConfig, gridMap, units);
@@ -178,7 +181,8 @@ public class GameBootstrap : MonoBehaviour
             units,
             MoveUnitTowards,
             lifecycle,
-            PlayCombatFeedback
+            PlayCombatFeedback,
+            OnTargetAcquired
         );
         selectionInput = new RtsSelectionInputController(dragSelectThreshold);
         ui = new RtsGameUIController(
@@ -323,7 +327,10 @@ public class GameBootstrap : MonoBehaviour
         HandleUnitMoveCommand();
         HandlePlacementPreview();
         HandlePlacementConfirm();
-        enemyAI.Tick(Time.deltaTime, playerBaseData, enemyBaseData);
+        if (enemyAI.Tick(Time.deltaTime, playerBaseData, enemyBaseData))
+        {
+            telemetry.RecordWave(CountUnits(Team.Enemy));
+        }
         combat.Tick(Time.deltaTime);
         feedback?.Tick(Time.deltaTime);
         movement.Tick(Time.deltaTime);
@@ -376,6 +383,8 @@ public class GameBootstrap : MonoBehaviour
         matchTime = 0f;
         nextEntityId = 1;
         inspectorDemoPrepared = false;
+        telemetry.Reset();
+        telemetry.Record(ArenaTelemetryKind.Match, "MATCH INITIALIZED");
 
         gridRoot = new GameObject("GridRoot").transform;
         buildingRoot = new GameObject("BuildingRoot").transform;
@@ -416,6 +425,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void RestartGame()
     {
+        StopAllCoroutines();
         DestroyGameWorld();
         CreateGameWorld();
         gameWorldCreated = true;
@@ -425,6 +435,7 @@ public class GameBootstrap : MonoBehaviour
 
     private void ReturnToMainMenu()
     {
+        StopAllCoroutines();
         DestroyGameWorld();
         gameWorldCreated = false;
         gameState = GameState.MainMenu;
@@ -533,6 +544,7 @@ public class GameBootstrap : MonoBehaviour
 
         buildings.Add(playerBaseData);
         playerBaseData.Id = nextEntityId++;
+        telemetry.RecordBuilding(playerBaseData);
 
         Debug.Log($"Base created at cell {baseCell}");
     }
@@ -580,6 +592,7 @@ public class GameBootstrap : MonoBehaviour
 
         buildings.Add(enemyBaseData);
         enemyBaseData.Id = nextEntityId++;
+        telemetry.RecordBuilding(enemyBaseData);
 
         Debug.Log($"Enemy base created at cell {enemyBaseCell}");
     }
@@ -1105,6 +1118,10 @@ public class GameBootstrap : MonoBehaviour
         }
 
         Debug.Log($"Attack command: {commandCount} units -> {targetBuilding.DisplayName}");
+        telemetry.RecordPlayerOrder(
+            $"ORDER ATTACK  UNITS {commandCount:00} -> " +
+            $"E#{targetBuilding.Id} {targetBuilding.Type}"
+        );
     }
 
     private void TryAttackSelectedUnits(UnitData targetUnit)
@@ -1133,6 +1150,10 @@ public class GameBootstrap : MonoBehaviour
         }
 
         Debug.Log($"Attack command: {commandCount} units -> {targetUnit.DisplayName}");
+        telemetry.RecordPlayerOrder(
+            $"ORDER ATTACK  UNITS {commandCount:00} -> " +
+            $"E#{targetUnit.Id} {targetUnit.Type}"
+        );
     }
 
     private void TryMoveSelectedUnitsToCell(
@@ -1155,6 +1176,9 @@ public class GameBootstrap : MonoBehaviour
         }
 
         Debug.Log($"Move command: {moveCount} units -> around cell {centerCell}");
+        telemetry.RecordPlayerOrder(
+            $"ORDER MOVE  UNITS {moveCount:00} -> CELL {centerCell.x:00},{centerCell.y:00}"
+        );
     }
 
     private UnitData CreateEnemyInfantry(Vector2Int spawnCell)
@@ -1191,6 +1215,7 @@ public class GameBootstrap : MonoBehaviour
         gridMap.TryOccupy(spawnCell);
         enemyInfantry.Id = nextEntityId++;
         units.Add(enemyInfantry);
+        telemetry.RecordProduced(enemyInfantry);
         return enemyInfantry;
     }
     
@@ -1224,7 +1249,8 @@ public class GameBootstrap : MonoBehaviour
             mainCamera,
             gridMap.MapSize,
             gridMap.HalfSize,
-            visibility
+            visibility,
+            telemetry
         );
         ui.Tick(Time.unscaledDeltaTime);
     }
@@ -1294,6 +1320,23 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        DestroyGameWorld();
+        CreateGameWorld();
+        gameWorldCreated = true;
+        gameState = GameState.Playing;
+        isPaused = false;
+        inspectorDemoPrepared = true;
+        telemetry.Record(
+            ArenaTelemetryKind.Demo,
+            "SHOWCASE RESET  deterministic scenario initialized"
+        );
+        StartCoroutine(RunInspectorDemo());
+    }
+
+    private IEnumerator RunInspectorDemo()
+    {
+        telemetry.SetObjective("Demonstrate scouting, defense and combined arms");
+        telemetry.SetDemoPhase("01 INFRASTRUCTURE");
         BuildingData factory = FindPlayerBuilding(BuildingType.Factory);
         BuildingData garrison = FindPlayerBuilding(BuildingType.Garrison);
 
@@ -1311,10 +1354,14 @@ public class GameBootstrap : MonoBehaviour
             garrison = FindPlayerBuilding(BuildingType.Garrison);
         }
 
+        yield return new WaitForSeconds(0.8f);
+
+        telemetry.SetDemoPhase("02 FORCE COMPOSITION");
         Vector2Int playerOrigin = factory != null
             ? factory.Cell
             : playerBaseData.Cell;
         List<UnitData> demoInfantry = new List<UnitData>();
+        List<UnitData> demoArtillery = new List<UnitData>();
 
         for (int index = 0; index < 6; index++)
         {
@@ -1335,9 +1382,12 @@ public class GameBootstrap : MonoBehaviour
             }
 
             SpawnPlayerArtillery(spawnCell);
-            units[units.Count - 1].IsDeployed = index == 0;
+            demoArtillery.Add(units[units.Count - 1]);
         }
 
+        yield return new WaitForSeconds(0.8f);
+
+        telemetry.SetDemoPhase("03 DEFENSIVE POSTURE");
         if (garrison != null)
         {
             int garrisonCount = Mathf.Min(2, demoInfantry.Count);
@@ -1348,6 +1398,17 @@ public class GameBootstrap : MonoBehaviour
             }
         }
 
+        if (demoArtillery.Count > 0)
+        {
+            SetArtilleryDeployment(
+                new List<UnitData> { demoArtillery[0] },
+                true
+            );
+        }
+
+        yield return new WaitForSeconds(0.8f);
+
+        telemetry.SetDemoPhase("04 RECON MOVEMENT");
         Vector2 combatPosition = Vector2.Lerp(basePosition, Vector2.zero, 0.38f);
         Vector2Int combatCell = gridMap.WorldToCell(combatPosition);
         List<UnitData> movingInfantry = new List<UnitData>();
@@ -1363,8 +1424,14 @@ public class GameBootstrap : MonoBehaviour
         }
 
         movement.CommandGroupMove(movingInfantry, combatCell, combatPosition);
+        telemetry.RecordPlayerOrder(
+            $"DEMO RECON  UNITS {movingInfantry.Count:00} -> CELL {combatCell.x:00},{combatCell.y:00}"
+        );
         SelectMultipleUnits(movingInfantry);
 
+        yield return new WaitForSeconds(1.2f);
+
+        telemetry.SetDemoPhase("05 ENEMY CONTACT");
         for (int index = 0; index < 7; index++)
         {
             if (!gridMap.TryFindOpenCellNear(combatCell, out Vector2Int spawnCell))
@@ -1377,10 +1444,13 @@ public class GameBootstrap : MonoBehaviour
             enemy.IsMoving = false;
         }
 
-        inspectorDemoPrepared = true;
+        telemetry.RecordWave(CountUnits(Team.Enemy));
         visibility?.Tick(0f);
         cameraController.CenterOnWorld(Vector2.Lerp(basePosition, combatPosition, 0.45f));
         ui.ShowNotification("演示态已生成：移动、驻防、火炮和敌军状态已就绪");
+        yield return new WaitForSeconds(1.2f);
+        telemetry.SetDemoPhase("06 LIVE ENGAGEMENT");
+        telemetry.SetObjective("Hold the garrison and eliminate the contact group");
     }
 
     private BuildingData FindPlayerBuilding(BuildingType type)
@@ -1440,6 +1510,8 @@ public class GameBootstrap : MonoBehaviour
         bool deployed
     )
     {
+        int changedCount = 0;
+
         foreach (UnitData unit in artilleryUnits)
         {
             if (unit == null ||
@@ -1455,11 +1527,21 @@ public class GameBootstrap : MonoBehaviour
             }
 
             unit.IsDeployed = deployed;
+            changedCount++;
             presentation.SetCircleColor(
                 unit.GameObject,
                 deployed
                     ? new Color(0.55f, 0.2f, 0.95f, 1f)
                     : new Color(0.8f, 0.35f, 1f, 1f)
+            );
+        }
+
+        if (changedCount > 0)
+        {
+            telemetry.Record(
+                ArenaTelemetryKind.Deployment,
+                $"ARTILLERY {(deployed ? "DEPLOY" : "MOBILE")}  COUNT {changedCount:00}",
+                Team.Player
             );
         }
     }
@@ -1525,6 +1607,11 @@ public class GameBootstrap : MonoBehaviour
 
         if (orderedCount > 0)
         {
+            telemetry.Record(
+                ArenaTelemetryKind.Garrison,
+                $"ORDER GARRISON  UNITS {orderedCount:00} -> P#{targetBuilding.Id}",
+                Team.Player
+            );
             ui.ShowNotification(
                 $"已命令 {orderedCount} 名步兵进入驻防建筑"
             );
@@ -1613,6 +1700,12 @@ public class GameBootstrap : MonoBehaviour
             $"{unit.DisplayName} entered {targetBuilding.DisplayName}. " +
             $"Garrison: {targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}"
         );
+        telemetry.Record(
+            ArenaTelemetryKind.Garrison,
+            $"P#{unit.Id} entered P#{targetBuilding.Id}  LOAD " +
+            $"{targetBuilding.GarrisonedUnits.Count}/{targetBuilding.GarrisonCapacity}",
+            Team.Player
+        );
         return true;
     }
 
@@ -1684,6 +1777,11 @@ public class GameBootstrap : MonoBehaviour
 
         if (showNotification && evacuatedCount > 0)
         {
+            telemetry.Record(
+                ArenaTelemetryKind.Garrison,
+                $"EVACUATE P#{building.Id}  UNITS {evacuatedCount:00}",
+                Team.Player
+            );
             ui.ShowNotification($"已撤出 {evacuatedCount} 名驻防步兵");
         }
 
@@ -1712,7 +1810,43 @@ public class GameBootstrap : MonoBehaviour
 
     private void PlayCombatFeedback(CombatFeedbackEvent combatFeedback)
     {
+        telemetry.RecordDamage(combatFeedback);
         feedback?.PlayCombatFeedback(combatFeedback);
+    }
+
+    private void OnTargetAcquired(UnitData source, UnitData target)
+    {
+        if (source == null || target == null)
+        {
+            return;
+        }
+
+        telemetry.Record(
+            ArenaTelemetryKind.Targeting,
+            $"{ShortTeam(source.Team)}#{source.Id} acquired " +
+            $"{ShortTeam(target.Team)}#{target.Id}",
+            source.Team
+        );
+    }
+
+    private int CountUnits(Team team)
+    {
+        int count = 0;
+
+        foreach (UnitData unit in units)
+        {
+            if (unit != null && unit.Team == team)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static string ShortTeam(Team team)
+    {
+        return team == Team.Player ? "P" : "E";
     }
 
     private void ResumeGame()
@@ -1728,6 +1862,11 @@ public class GameBootstrap : MonoBehaviour
         }
 
         selectedUnits.Remove(unit);
+        telemetry.Record(
+            ArenaTelemetryKind.Lifecycle,
+            $"{ShortTeam(unit.Team)}#{unit.Id} destroyed {unit.Type}",
+            unit.Team
+        );
 
         if (unitSelectionRings.TryGetValue(unit, out GameObject ringObject))
         {
@@ -1743,6 +1882,11 @@ public class GameBootstrap : MonoBehaviour
 
     private void OnBuildingRemoved(BuildingData building)
     {
+        telemetry.Record(
+            ArenaTelemetryKind.Lifecycle,
+            $"{ShortTeam(building.Team)}#{building.Id} destroyed {building.Type}",
+            building.Team
+        );
         EvacuateGarrison(building, false);
 
         if (selectedBuildingData == building)
@@ -1894,6 +2038,7 @@ public class GameBootstrap : MonoBehaviour
         );
         factory.Id = nextEntityId++;
         buildings.Add(factory);
+        telemetry.RecordBuilding(factory);
         
         Debug.Log($"Factory built at cell {cell}. Remaining resources: {economy.Resources}");
         ui.ShowNotification("兵厂建造完成");
@@ -1925,6 +2070,12 @@ public class GameBootstrap : MonoBehaviour
             ui.ShowNotification("步兵生产请求未被接受", true);
             return false;
         }
+
+        telemetry.Record(
+            ArenaTelemetryKind.Production,
+            $"P#{factory.Id} queued Infantry  Q {factory.ProductionQueueCount}/{maxFactoryQueueSize}",
+            Team.Player
+        );
 
         ui.ShowNotification($"步兵已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
         return true;
@@ -1972,6 +2123,7 @@ public class GameBootstrap : MonoBehaviour
         };
         garrison.Id = nextEntityId++;
         buildings.Add(garrison);
+        telemetry.RecordBuilding(garrison);
 
         Debug.Log(
             $"Garrison built at cell {cell}. Remaining resources: {economy.Resources}"
@@ -2005,6 +2157,12 @@ public class GameBootstrap : MonoBehaviour
             ui.ShowNotification("火炮生产请求未被接受", true);
             return false;
         }
+
+        telemetry.Record(
+            ArenaTelemetryKind.Production,
+            $"P#{factory.Id} queued Artillery  Q {factory.ProductionQueueCount}/{maxFactoryQueueSize}",
+            Team.Player
+        );
 
         ui.ShowNotification($"火炮已加入生产队列（{factory.ProductionQueueCount}/{maxFactoryQueueSize}）");
         return true;
@@ -2063,6 +2221,7 @@ public class GameBootstrap : MonoBehaviour
         gridMap.TryOccupy(spawnCell);
         infantry.Id = nextEntityId++;
         units.Add(infantry);
+        telemetry.RecordProduced(infantry);
 
         Debug.Log($"Infantry trained at cell {spawnCell}.");
     }
@@ -2103,6 +2262,7 @@ public class GameBootstrap : MonoBehaviour
         gridMap.TryOccupy(spawnCell);
         artillery.Id = nextEntityId++;
         units.Add(artillery);
+        telemetry.RecordProduced(artillery);
 
         Debug.Log($"Artillery trained at cell {spawnCell}.");
     }

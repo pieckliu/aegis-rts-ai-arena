@@ -119,9 +119,19 @@ internal sealed class RtsVisibilitySystem
         return gridMap.IsCellInside(cell) && visibleCells[cell.x, cell.y];
     }
 
+    public bool IsCellVisible(Vector2Int cell)
+    {
+        return gridMap.IsCellInside(cell) && visibleCells[cell.x, cell.y];
+    }
+
     public bool IsExplored(Vector2 worldPosition)
     {
         Vector2Int cell = gridMap.WorldToCell(worldPosition);
+        return gridMap.IsCellInside(cell) && exploredCells[cell.x, cell.y];
+    }
+
+    public bool IsCellExplored(Vector2Int cell)
+    {
         return gridMap.IsCellInside(cell) && exploredCells[cell.x, cell.y];
     }
 

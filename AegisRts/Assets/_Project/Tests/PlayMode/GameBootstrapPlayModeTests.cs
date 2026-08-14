@@ -108,6 +108,9 @@ public sealed class GameBootstrapPlayModeTests
         Assert.IsNotEmpty(
             inspector.Find("InspectorMetrics").GetComponent<Text>().text
         );
+        Text inspectorLog = inspector.Find("InspectorLog").GetComponent<Text>();
+        Assert.IsNotEmpty(inspectorLog.text);
+        StringAssert.Contains("ACTION LOG", inspectorLog.text);
         Button closeInspector = inspector
             .GetComponentsInChildren<Button>(true)
             .First(button => button.name == "CloseArenaInspector");
@@ -305,5 +308,21 @@ public sealed class GameBootstrapPlayModeTests
             initialRevealedCells,
             "Moving a friendly unit should expand the explored fog-of-war area."
         );
+
+        inspectorToggle.onClick.Invoke();
+        yield return null;
+        inspector.GetComponentsInChildren<Button>(true)
+            .First(button => button.name == "PrepareInspectorDemo")
+            .onClick.Invoke();
+        yield return new WaitForSeconds(5.2f);
+        yield return null;
+
+        StringAssert.Contains(
+            "LIVE ENGAGEMENT",
+            inspector.Find("InspectorState").GetComponent<Text>().text
+        );
+        StringAssert.Contains("ACTION LOG", inspectorLog.text);
+        Assert.GreaterOrEqual(bootstrap.GetArenaObservation().Buildings.Length, 4);
+        Assert.GreaterOrEqual(bootstrap.GetArenaObservation().Units.Length, 8);
     }
 }

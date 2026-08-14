@@ -57,6 +57,7 @@ internal sealed class RtsGameUIController
     private readonly GameObject notificationPanel;
     private readonly Text notificationText;
     private readonly RectTransform selectionRect;
+    private readonly GameObject minimapPanel;
     private readonly RectTransform minimapContent;
     private readonly RawImage minimapFog;
     private readonly RectTransform minimapViewport;
@@ -64,6 +65,7 @@ internal sealed class RtsGameUIController
     private readonly Button inspectorToggleButton;
     private readonly Text inspectorMetricsText;
     private readonly Text inspectorStateText;
+    private readonly Text inspectorLogText;
     private readonly List<InspectorChannel> inspectorChannels =
         new List<InspectorChannel>();
     private readonly Dictionary<object, HealthView> healthViews = new Dictionary<object, HealthView>();
@@ -180,7 +182,7 @@ internal sealed class RtsGameUIController
         notificationText.raycastTarget = false;
         notificationPanel.SetActive(false);
 
-        GameObject minimapPanel = CreatePanel(
+        minimapPanel = CreatePanel(
             "Minimap",
             hudPanel.transform,
             new Vector2(0.02f, 0.035f),
@@ -255,6 +257,9 @@ internal sealed class RtsGameUIController
         inspectorStateText = inspectorPanel.transform
             .Find("InspectorState")
             .GetComponent<Text>();
+        inspectorLogText = inspectorPanel.transform
+            .Find("InspectorLog")
+            .GetComponent<Text>();
         inspectorPanel.SetActive(false);
 
         overlayPanel = CreatePanel("Overlay", canvasObject.transform, new Vector2(0.34f, 0.30f), new Vector2(0.66f, 0.70f), new Color(0.025f, 0.035f, 0.055f, 0.97f));
@@ -318,7 +323,8 @@ internal sealed class RtsGameUIController
         Camera camera,
         int mapSize,
         float mapHalfSize,
-        RtsVisibilitySystem visibility
+        RtsVisibilitySystem visibility,
+        ArenaTelemetrySystem telemetry
     )
     {
         bool playing = state == GameState.Playing;
@@ -462,7 +468,8 @@ internal sealed class RtsGameUIController
             buildings,
             units,
             mapSize,
-            visibility
+            visibility,
+            telemetry
         );
     }
 
@@ -478,6 +485,13 @@ internal sealed class RtsGameUIController
         inspectorPanel.SetActive(visible);
         commandPanel.SetActive(!visible);
         inspectorToggleButton.gameObject.SetActive(!visible);
+        RectTransform minimapRect = minimapPanel.GetComponent<RectTransform>();
+        minimapRect.anchorMin = new Vector2(0.02f, 0.035f);
+        minimapRect.anchorMax = visible
+            ? new Vector2(0.17f, 0.30f)
+            : new Vector2(0.205f, 0.365f);
+        minimapRect.offsetMin = Vector2.zero;
+        minimapRect.offsetMax = Vector2.zero;
 
         if (camera != null)
         {
@@ -1037,9 +1051,18 @@ internal sealed class RtsGameUIController
             string.Empty,
             15,
             TextAnchor.UpperLeft,
-            new Vector2(0.025f, 0.025f),
-            new Vector2(0.975f, 0.275f)
+            new Vector2(0.025f, 0.165f),
+            new Vector2(0.975f, 0.28f)
         ).color = new Color(0.68f, 0.78f, 0.84f, 1f);
+        CreateText(
+            "InspectorLog",
+            root.transform,
+            string.Empty,
+            13,
+            TextAnchor.UpperLeft,
+            new Vector2(0.025f, 0.02f),
+            new Vector2(0.975f, 0.16f)
+        ).color = new Color(0.72f, 0.8f, 0.84f, 1f);
         return root;
     }
 
@@ -1097,7 +1120,8 @@ internal sealed class RtsGameUIController
         IList<BuildingData> buildings,
         IList<UnitData> units,
         int mapSize,
-        RtsVisibilitySystem visibility
+        RtsVisibilitySystem visibility,
+        ArenaTelemetrySystem telemetry
     )
     {
         if (!inspectorVisible || Time.unscaledTime < nextInspectorRefreshTime)
@@ -1108,11 +1132,13 @@ internal sealed class RtsGameUIController
         nextInspectorRefreshTime = Time.unscaledTime + InspectorRefreshInterval;
         EnsureInspectorTextures(mapSize, visibility);
 
-        for (int index = 1; index < inspectorChannels.Count; index++)
+        for (int index = 0; index < inspectorChannels.Count; index++)
         {
             FillInspectorChannel(inspectorChannels[index], new Color(0.018f, 0.026f, 0.034f, 1f));
             PaintInspectorGrid(inspectorChannels[index]);
         }
+
+        PaintVisibilityChannel(inspectorChannels[0], mapSize, visibility);
 
         int playerUnits = 0;
         int enemyUnits = 0;
@@ -1227,7 +1253,7 @@ internal sealed class RtsGameUIController
                     inspectorChannels[4],
                     unit.Cell,
                     unit.AttackTarget.Cell,
-                    new Color(0.75f, 0.12f, 0.08f, 1f)
+                    new Color(0.38f, 0.07f, 0.05f, 1f)
                 );
                 PaintCells(
                     inspectorChannels[4],
@@ -1242,7 +1268,7 @@ internal sealed class RtsGameUIController
                     inspectorChannels[4],
                     unit.Cell,
                     unit.AttackUnitTarget.Cell,
-                    new Color(0.75f, 0.12f, 0.08f, 1f)
+                    new Color(0.38f, 0.07f, 0.05f, 1f)
                 );
                 PaintCell(
                     inspectorChannels[4],
@@ -1277,7 +1303,7 @@ internal sealed class RtsGameUIController
             PaintCell(inspectorChannels[5], unit.Cell, tacticalColor, 1);
         }
 
-        for (int index = 1; index < inspectorChannels.Count; index++)
+        for (int index = 0; index < inspectorChannels.Count; index++)
         {
             ApplyInspectorChannel(inspectorChannels[index]);
         }
@@ -1288,14 +1314,20 @@ internal sealed class RtsGameUIController
         inspectorMetricsText.text =
             $"FRAME {Time.frameCount:000000}    T+ {matchTime:000.0}s    FPS {fps:00.0}    " +
             $"RES {resources:0000}    ENTITIES {buildings.Count + units.Count:000}";
-        inspectorStateText.text =
-            "SIMULATION STATE  //  GROUND-TRUTH DEBUG VIEW\n" +
-            $"PLAYER UNITS  {playerUnits:00}     ENEMY UNITS  {enemyUnits:00}     SELECTED  {selectedUnits.Count:00}     QUEUED  {queuedUnits:00}\n" +
-            $"MOVING  {movingUnits:00}     ENGAGED  {engagedUnits:00}     ARTILLERY DEPLOYED  {deployedArtillery:00}     GARRISONED  {garrisonedUnits:00}\n\n" +
-            "LEGEND   <color=#FFE61F>PLAYER ■</color>   <color=#FF4C1F>ENEMY ■</color>   " +
-            "<color=#CC59FF>ARTILLERY ■</color>   <color=#19E5D6>GARRISON ■</color>   " +
-            "<color=#FFFFFF>SELECTED ■</color>\n" +
-            "NOTE     Visibility is agent-observable; remaining channels expose simulation truth for debugging.";
+        inspectorStateText.text = telemetry == null
+            ? "SIMULATION TELEMETRY UNAVAILABLE"
+            :
+                $"PHASE  <color=#72DDF7>{telemetry.DemoPhase}</color>     " +
+                $"OBJECTIVE  {telemetry.CurrentObjective}\n" +
+                $"UNITS P {playerUnits:00} / E {enemyUnits:00}     MOVING {movingUnits:00}     ENGAGED {engagedUnits:00}     " +
+                $"DEPLOYED {deployedArtillery:00}     GARRISONED {garrisonedUnits:00}     QUEUED {queuedUnits:00}\n" +
+                $"DAMAGE P {telemetry.PlayerDamage:0000} / E {telemetry.EnemyDamage:0000}     " +
+                $"KILLS P {telemetry.PlayerKills:00} / E {telemetry.EnemyKills:00}     " +
+                $"ORDERS {telemetry.PlayerOrders:00}     WAVES {telemetry.WavesStarted:00}";
+        inspectorLogText.text = telemetry == null
+            ? string.Empty
+            : "<color=#72DDF7>ACTION LOG  //  LIVE EVENT STREAM</color>\n" +
+                telemetry.GetRecentLog(6);
     }
 
     private void EnsureInspectorTextures(int mapSize, RtsVisibilitySystem visibility)
@@ -1305,10 +1337,9 @@ internal sealed class RtsGameUIController
             return;
         }
 
-        inspectorChannels[0].Image.texture = visibility?.FogTexture;
         int textureSize = Mathf.Max(1, mapSize);
 
-        for (int index = 1; index < inspectorChannels.Count; index++)
+        for (int index = 0; index < inspectorChannels.Count; index++)
         {
             InspectorChannel channel = inspectorChannels[index];
 
@@ -1365,6 +1396,29 @@ internal sealed class RtsGameUIController
             {
                 channel.Pixels[offset * channel.Texture.width + coordinate] = gridColor;
                 channel.Pixels[coordinate * channel.Texture.width + offset] = gridColor;
+            }
+        }
+    }
+
+    private static void PaintVisibilityChannel(
+        InspectorChannel channel,
+        int mapSize,
+        RtsVisibilitySystem visibility
+    )
+    {
+        int size = Mathf.Max(1, mapSize);
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                Vector2Int cell = new Vector2Int(x, y);
+                Color color = visibility != null && visibility.IsCellVisible(cell)
+                    ? new Color(0.18f, 0.42f, 0.46f, 1f)
+                    : visibility != null && visibility.IsCellExplored(cell)
+                        ? new Color(0.075f, 0.13f, 0.17f, 1f)
+                        : new Color(0.012f, 0.018f, 0.025f, 1f);
+                PaintCell(channel, cell, color);
             }
         }
     }

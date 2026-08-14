@@ -10,6 +10,7 @@ internal sealed class RtsCombatSystem
     private readonly Action<UnitData, Vector2> moveTowards;
     private readonly RtsEntityLifecycle lifecycle;
     private readonly Action<CombatFeedbackEvent> publishFeedback;
+    private readonly Action<UnitData, UnitData> publishTargetAcquired;
 
     public RtsCombatSystem(
         RtsGameConfig gameConfig,
@@ -17,7 +18,8 @@ internal sealed class RtsCombatSystem
         IList<UnitData> unitList,
         Action<UnitData, Vector2> movement,
         RtsEntityLifecycle entityLifecycle,
-        Action<CombatFeedbackEvent> feedback = null
+        Action<CombatFeedbackEvent> feedback = null,
+        Action<UnitData, UnitData> targetAcquired = null
     )
     {
         config = gameConfig;
@@ -26,6 +28,7 @@ internal sealed class RtsCombatSystem
         moveTowards = movement;
         lifecycle = entityLifecycle;
         publishFeedback = feedback;
+        publishTargetAcquired = targetAcquired;
     }
 
     public void Tick(float deltaTime)
@@ -85,10 +88,16 @@ internal sealed class RtsCombatSystem
             return;
         }
 
+        bool changedTarget = source.AttackUnitTarget != nearest;
         source.AttackUnitTarget = nearest;
         source.AttackTarget = null;
         source.IsMoving = false;
         source.Waypoints.Clear();
+
+        if (changedTarget)
+        {
+            publishTargetAcquired?.Invoke(source, nearest);
+        }
     }
 
     private void AttackUnit(UnitData attacker, float deltaTime)
@@ -133,6 +142,8 @@ internal sealed class RtsCombatSystem
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
             attacker,
+            target.Id,
+            target.Team,
             target.Position,
             target.GameObject,
             damage,
@@ -188,6 +199,8 @@ internal sealed class RtsCombatSystem
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
             attacker,
+            target.Id,
+            target.Team,
             target.Position,
             target.GameObject,
             damage,
@@ -203,6 +216,8 @@ internal sealed class RtsCombatSystem
 
     private void PublishFeedback(
         UnitData attacker,
+        int targetId,
+        Team targetTeam,
         Vector2 targetPosition,
         GameObject targetObject,
         int damage,
@@ -214,7 +229,10 @@ internal sealed class RtsCombatSystem
             targetPosition,
             attacker.GameObject,
             targetObject,
+            attacker.Id,
+            targetId,
             attacker.Team,
+            targetTeam,
             damage,
             isLethal
         ));

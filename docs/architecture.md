@@ -24,6 +24,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsWorldFeedbackSystem` owns transient attack projectiles, hit flashes, and death pulses.
 - `RtsEntityLifecycle` owns entity removal, occupancy cleanup, target cleanup, garrison membership cleanup, and destruction callbacks.
 - `ArenaOrchestrator` owns observation building, action validation, entity lookup, and command routing.
+- `ArenaTelemetrySystem` owns the bounded event stream plus presentation-facing damage, kill, order, production, construction, and wave counters.
 - `RtsGameUIController` builds and updates the runtime uGUI menu, minimal gameplay controls, tactical minimap, camera viewport, selection rectangle, health bars, production progress, transient notifications, and the six-channel Arena Inspector.
 - `MinimapPointerHandler` converts minimap pointer and drag input into normalized camera-navigation requests.
 - `ArenaGameRules` contains deterministic economy and damage rules.
@@ -53,9 +54,14 @@ selection/targets, and tactical state deliberately expose ground truth for debug
 demonstrations. Opening it changes only the camera viewport and UI; it does not modify simulation
 or Arena API state.
 
-The Inspector's explicit showcase button is the exception: it prepares a marked, one-shot debug
+The Inspector's explicit showcase button is the exception: it resets the current match and prepares a marked, deterministic one-shot debug
 scenario with representative unit states so every channel contains useful portfolio-demo data. It
 is never triggered during a normal match unless the player presses the button.
+
+The showcase advances through named infrastructure, force-composition, defensive-posture,
+reconnaissance, contact, and engagement phases. Gameplay systems publish concise events to
+`ArenaTelemetrySystem`; the Inspector reads the latest events and counters as a one-way view. The
+telemetry stream never issues commands or changes combat outcomes.
 
 Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue. Garrison capacity, occupants, and entry/evacuation actions are exposed through the Arena contract.
 

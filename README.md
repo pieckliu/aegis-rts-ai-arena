@@ -38,7 +38,8 @@ Playable Unity vertical slice:
 - explore a three-state fog of war driven by player building and unit sight;
 - use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;
 - press `F2` or use the visible AI-observatory button to open a professional split-screen Arena Inspector with six live observation/debug channels and simulation metrics;
-- optionally generate a one-shot showcase state containing moving infantry, a loaded garrison, deployed artillery, and an enemy contact group for screenshots and recordings;
+- optionally reset into a deterministic one-shot showcase containing moving infantry, a loaded garrison, deployed artillery, and an enemy contact group for screenshots and recordings;
+- inspect a live action log, current objective, showcase phase, damage, kills, orders, and enemy-wave telemetry without coupling UI state back into the simulation;
 - read player bases, factories, infantry, artillery, and enemies as distinct symbolic dots;
 - use a runtime uGUI menu, command panel, overlays, selection rectangle, and health bars;
 - fight an automatically spawning enemy army;
