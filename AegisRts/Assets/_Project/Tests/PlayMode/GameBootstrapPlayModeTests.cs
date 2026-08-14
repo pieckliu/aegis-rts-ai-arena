@@ -81,6 +81,31 @@ public sealed class GameBootstrapPlayModeTests
         Assert.AreEqual(0, healthBars.Length, "Undamaged and unselected buildings should not show health bars.");
 
         GameBootstrap bootstrap = Object.FindAnyObjectByType<GameBootstrap>();
+        RectTransform inspector = ui
+            .GetComponentsInChildren<RectTransform>(true)
+            .First(rect => rect.name == "ArenaInspector");
+        Assert.IsFalse(inspector.gameObject.activeSelf);
+        bootstrap.ToggleArenaInspector();
+        yield return null;
+        Assert.IsTrue(inspector.gameObject.activeSelf);
+        Assert.AreEqual(0.48f, Camera.main.rect.width, 0.001f);
+        RawImage[] inspectorChannels = inspector
+            .GetComponentsInChildren<RawImage>(true)
+            .Where(image => image.name == "ChannelImage")
+            .ToArray();
+        Assert.AreEqual(6, inspectorChannels.Length);
+        Assert.IsTrue(
+            inspectorChannels.All(channel => channel.texture != null),
+            "Every inspector channel should expose a live texture."
+        );
+        Assert.IsNotEmpty(
+            inspector.Find("InspectorMetrics").GetComponent<Text>().text
+        );
+        bootstrap.ToggleArenaInspector();
+        yield return null;
+        Assert.IsFalse(inspector.gameObject.activeSelf);
+        Assert.AreEqual(1f, Camera.main.rect.width, 0.001f);
+
         ArenaEntityObservation playerBaseObservation = bootstrap
             .GetArenaObservation()
             .Buildings

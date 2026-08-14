@@ -24,7 +24,7 @@ The prototype runtime is being split incrementally so gameplay stays playable du
 - `RtsWorldFeedbackSystem` owns transient attack projectiles, hit flashes, and death pulses.
 - `RtsEntityLifecycle` owns entity removal, occupancy cleanup, target cleanup, garrison membership cleanup, and destruction callbacks.
 - `ArenaOrchestrator` owns observation building, action validation, entity lookup, and command routing.
-- `RtsGameUIController` builds and updates the runtime uGUI menu, minimal gameplay controls, tactical minimap, camera viewport, selection rectangle, health bars, production progress, and transient notifications.
+- `RtsGameUIController` builds and updates the runtime uGUI menu, minimal gameplay controls, tactical minimap, camera viewport, selection rectangle, health bars, production progress, transient notifications, and the six-channel Arena Inspector.
 - `MinimapPointerHandler` converts minimap pointer and drag input into normalized camera-navigation requests.
 - `ArenaGameRules` contains deterministic economy and damage rules.
 - `GridPathfinder` contains deterministic grid path search.
@@ -46,6 +46,12 @@ minimap and world map share visibility state, preventing hidden enemy entities a
 leaking information. Friendly minimap contacts update from live positions; hidden mobile enemy
 contacts remain frozen at their last observed position and expire after the configured memory
 duration, while discovered static enemy buildings remain as dim strategic intelligence.
+
+The `F2` Arena Inspector is presentation-only and refreshes at a capped telemetry rate. Its
+visibility channel mirrors agent-observable fog state, while occupancy, teams, hit points,
+selection/targets, and tactical state deliberately expose ground truth for debugging and portfolio
+demonstrations. Opening it changes only the camera viewport and UI; it does not modify simulation
+or Arena API state.
 
 Combat feedback remains presentation-only: `RtsCombatSystem` publishes immutable hit data and never depends on visual state. Production progress is derived from the existing factory queue. Garrison capacity, occupants, and entry/evacuation actions are exposed through the Arena contract.
 

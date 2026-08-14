@@ -295,6 +295,11 @@ public class GameBootstrap : MonoBehaviour
             cameraController.ToggleStrategicView();
         }
 
+        if (Input.GetKeyDown(KeyCode.F2))
+        {
+            ToggleArenaInspector();
+        }
+
         if (isPaused)
         {
             return;
@@ -1197,6 +1202,7 @@ public class GameBootstrap : MonoBehaviour
             isPaused,
             gameWon,
             gameLost,
+            matchTime,
             economy.Resources,
             factoryCost,
             garrisonCost,
@@ -1212,6 +1218,7 @@ public class GameBootstrap : MonoBehaviour
             buildings,
             units,
             mainCamera,
+            gridMap.MapSize,
             gridMap.HalfSize,
             visibility
         );
@@ -1229,6 +1236,16 @@ public class GameBootstrap : MonoBehaviour
     private bool IsPointerOverUI()
     {
         return ui != null && ui.IsPointerOverUI();
+    }
+
+    public void ToggleArenaInspector()
+    {
+        if (ui == null || mainCamera == null)
+        {
+            return;
+        }
+
+        ui.ToggleInspector(mainCamera);
     }
 
     private void TrainSelectedFactory()

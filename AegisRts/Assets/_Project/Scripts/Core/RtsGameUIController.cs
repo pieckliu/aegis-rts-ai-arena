@@ -6,6 +6,16 @@ using UnityEngine.UI;
 
 internal sealed class RtsGameUIController
 {
+    private const float InspectorViewportWidth = 0.48f;
+    private const float InspectorRefreshInterval = 0.15f;
+
+    private sealed class InspectorChannel
+    {
+        public RawImage Image;
+        public Texture2D Texture;
+        public Color[] Pixels;
+    }
+
     private sealed class HealthView
     {
         public GameObject Root;
@@ -28,6 +38,7 @@ internal sealed class RtsGameUIController
     private readonly Canvas canvas;
     private readonly GameObject menuPanel;
     private readonly GameObject hudPanel;
+    private readonly GameObject commandPanel;
     private readonly GameObject overlayPanel;
     private readonly Text resourceText;
     private readonly Text infoText;
@@ -49,9 +60,19 @@ internal sealed class RtsGameUIController
     private readonly RectTransform minimapContent;
     private readonly RawImage minimapFog;
     private readonly RectTransform minimapViewport;
+    private readonly GameObject inspectorPanel;
+    private readonly Text inspectorMetricsText;
+    private readonly Text inspectorStateText;
+    private readonly List<InspectorChannel> inspectorChannels =
+        new List<InspectorChannel>();
     private readonly Dictionary<object, HealthView> healthViews = new Dictionary<object, HealthView>();
     private readonly Dictionary<object, MinimapMarker> minimapMarkers = new Dictionary<object, MinimapMarker>();
     private float notificationTimer;
+    private float nextInspectorRefreshTime;
+    private bool inspectorVisible;
+    private Camera inspectorCamera;
+
+    public bool IsInspectorVisible => inspectorVisible;
 
     public RtsGameUIController(
         Action startGame,
@@ -93,7 +114,7 @@ internal sealed class RtsGameUIController
 
         hudPanel = CreatePanel("Hud", canvasObject.transform, Vector2.zero, Vector2.one, Color.clear);
         resourceText = CreateText("Resources", hudPanel.transform, string.Empty, 21, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.93f), new Vector2(0.76f, 0.985f));
-        GameObject commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.30f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 0.94f));
+        commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.30f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 0.94f));
         CreateText("PanelTitle", commandPanel.transform, "指挥面板", 26, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.91f), new Vector2(0.92f, 0.98f));
         CreateButton("BuildFactory", commandPanel.transform, "建造兵厂", new Vector2(0.08f, 0.81f), new Vector2(0.92f, 0.89f), selectFactory);
         CreateButton("BuildGarrison", commandPanel.transform, "建造驻防建筑", new Vector2(0.08f, 0.72f), new Vector2(0.92f, 0.80f), selectGarrison);
@@ -211,6 +232,15 @@ internal sealed class RtsGameUIController
         selection.GetComponent<Image>().raycastTarget = false;
         selection.SetActive(false);
 
+        inspectorPanel = CreateInspectorPanel(hudPanel.transform);
+        inspectorMetricsText = inspectorPanel.transform
+            .Find("InspectorMetrics")
+            .GetComponent<Text>();
+        inspectorStateText = inspectorPanel.transform
+            .Find("InspectorState")
+            .GetComponent<Text>();
+        inspectorPanel.SetActive(false);
+
         overlayPanel = CreatePanel("Overlay", canvasObject.transform, new Vector2(0.34f, 0.30f), new Vector2(0.66f, 0.70f), new Color(0.025f, 0.035f, 0.055f, 0.97f));
         overlayTitle = CreateText("OverlayTitle", overlayPanel.transform, string.Empty, 38, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.68f), new Vector2(0.92f, 0.94f));
         CreateButton("Resume", overlayPanel.transform, "继续", new Vector2(0.17f, 0.48f), new Vector2(0.83f, 0.62f), resume);
@@ -254,6 +284,7 @@ internal sealed class RtsGameUIController
         bool paused,
         bool won,
         bool lost,
+        float matchTime,
         int resources,
         int factoryCost,
         int garrisonCost,
@@ -269,6 +300,7 @@ internal sealed class RtsGameUIController
         IList<BuildingData> buildings,
         IList<UnitData> units,
         Camera camera,
+        int mapSize,
         float mapHalfSize,
         RtsVisibilitySystem visibility
     )
@@ -279,12 +311,15 @@ internal sealed class RtsGameUIController
 
         if (!playing)
         {
+            SetInspectorVisible(false, camera);
             overlayPanel.SetActive(false);
             ClearHealthViews();
             return;
         }
 
-        resourceText.text = $"资源：{resources}  兵厂：{factoryCost}  驻防：{garrisonCost}  步兵：{infantryCost}  火炮：{artilleryCost}  WASD 移动 / M 战略视角 / Esc 暂停";
+        resourceText.text = inspectorVisible
+            ? $"RES {resources:0000}   TIME {matchTime:000.0}s   F2 CLOSE INSPECTOR"
+            : $"资源：{resources}  兵厂：{factoryCost}  驻防：{garrisonCost}  步兵：{infantryCost}  火炮：{artilleryCost}  WASD 移动 / M 战略视角 / F2 观测台 / Esc 暂停";
         cancelBuildButton.gameObject.SetActive(buildMode != BuildingType.None);
         bool factorySelected = selectedBuilding != null && selectedBuilding.Type == BuildingType.Factory;
         trainButton.interactable = factorySelected;
@@ -403,12 +438,55 @@ internal sealed class RtsGameUIController
             isWorldVisible
         );
         UpdateMinimap(buildings, units, camera, mapHalfSize, visibility);
+        UpdateInspector(
+            matchTime,
+            resources,
+            selectedBuilding,
+            selectedUnits,
+            buildings,
+            units,
+            mapSize,
+            visibility
+        );
+    }
+
+    public void ToggleInspector(Camera camera)
+    {
+        SetInspectorVisible(!inspectorVisible, camera);
+    }
+
+    public void SetInspectorVisible(bool visible, Camera camera)
+    {
+        inspectorVisible = visible;
+        inspectorCamera = camera;
+        inspectorPanel.SetActive(visible);
+        commandPanel.SetActive(!visible);
+
+        if (camera != null)
+        {
+            camera.rect = visible
+                ? new Rect(0f, 0f, InspectorViewportWidth, 1f)
+                : new Rect(0f, 0f, 1f, 1f);
+        }
+
+        nextInspectorRefreshTime = 0f;
     }
 
     public void Destroy()
     {
+        if (inspectorCamera != null)
+        {
+            inspectorCamera.rect = new Rect(0f, 0f, 1f, 1f);
+        }
+
         ClearHealthViews();
         ClearMinimapMarkers();
+
+        foreach (InspectorChannel channel in inspectorChannels)
+        {
+            Release(channel.Texture);
+        }
+
         UnityEngine.Object.Destroy(canvasObject);
         Release(minimapDotSprite);
         Release(minimapDotTexture);
@@ -846,6 +924,413 @@ internal sealed class RtsGameUIController
         }
 
         healthViews.Clear();
+    }
+
+    private GameObject CreateInspectorPanel(Transform parent)
+    {
+        GameObject root = CreatePanel(
+            "ArenaInspector",
+            parent,
+            new Vector2(0.49f, 0.015f),
+            new Vector2(0.995f, 0.985f),
+            new Color(0.012f, 0.019f, 0.028f, 0.99f)
+        );
+        CreateText(
+            "InspectorTitle",
+            root.transform,
+            "AEGIS // ARENA OBSERVABILITY",
+            24,
+            TextAnchor.MiddleLeft,
+            new Vector2(0.025f, 0.93f),
+            new Vector2(0.73f, 0.985f)
+        ).color = new Color(0.35f, 0.88f, 1f, 1f);
+        Text hint = CreateText(
+            "InspectorHint",
+            root.transform,
+            "F2  CLOSE   •   LIVE TELEMETRY",
+            13,
+            TextAnchor.MiddleRight,
+            new Vector2(0.68f, 0.935f),
+            new Vector2(0.975f, 0.98f)
+        );
+        hint.color = new Color(0.55f, 0.64f, 0.7f, 1f);
+        CreateText(
+            "InspectorMetrics",
+            root.transform,
+            string.Empty,
+            14,
+            TextAnchor.MiddleLeft,
+            new Vector2(0.025f, 0.865f),
+            new Vector2(0.975f, 0.93f)
+        ).color = new Color(0.75f, 0.84f, 0.9f, 1f);
+
+        string[] titles =
+        {
+            "01  VISIBILITY",
+            "02  OCCUPANCY",
+            "03  ENTITY TEAMS",
+            "04  HIT POINTS",
+            "05  SELECTION / TARGETS",
+            "06  TACTICAL STATE"
+        };
+        float[] xPositions = { 0.025f, 0.35f, 0.675f };
+
+        for (int index = 0; index < titles.Length; index++)
+        {
+            int column = index % 3;
+            int row = index / 3;
+            float yMin = row == 0 ? 0.58f : 0.295f;
+            float yMax = row == 0 ? 0.85f : 0.565f;
+            CreateInspectorChannel(
+                root.transform,
+                titles[index],
+                new Vector2(xPositions[column], yMin),
+                new Vector2(xPositions[column] + 0.30f, yMax)
+            );
+        }
+
+        CreateText(
+            "InspectorState",
+            root.transform,
+            string.Empty,
+            14,
+            TextAnchor.UpperLeft,
+            new Vector2(0.025f, 0.025f),
+            new Vector2(0.975f, 0.275f)
+        ).color = new Color(0.68f, 0.78f, 0.84f, 1f);
+        return root;
+    }
+
+    private void CreateInspectorChannel(
+        Transform parent,
+        string title,
+        Vector2 min,
+        Vector2 max
+    )
+    {
+        GameObject card = CreatePanel(
+            title.Replace(" ", string.Empty),
+            parent,
+            min,
+            max,
+            new Color(0.032f, 0.052f, 0.068f, 1f)
+        );
+        Text label = CreateText(
+            "Title",
+            card.transform,
+            title,
+            13,
+            TextAnchor.MiddleLeft,
+            new Vector2(0.055f, 0.84f),
+            new Vector2(0.95f, 0.98f)
+        );
+        label.color = new Color(0.48f, 0.82f, 0.94f, 1f);
+        label.raycastTarget = false;
+
+        GameObject imageObject = new GameObject(
+            "ChannelImage",
+            typeof(RectTransform),
+            typeof(RawImage)
+        );
+        imageObject.transform.SetParent(card.transform, false);
+        RectTransform rect = imageObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.055f, 0.055f);
+        rect.anchorMax = new Vector2(0.945f, 0.83f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        RawImage image = imageObject.GetComponent<RawImage>();
+        image.color = Color.white;
+        image.raycastTarget = false;
+        inspectorChannels.Add(new InspectorChannel { Image = image });
+    }
+
+    private void UpdateInspector(
+        float matchTime,
+        int resources,
+        BuildingData selectedBuilding,
+        IList<UnitData> selectedUnits,
+        IList<BuildingData> buildings,
+        IList<UnitData> units,
+        int mapSize,
+        RtsVisibilitySystem visibility
+    )
+    {
+        if (!inspectorVisible || Time.unscaledTime < nextInspectorRefreshTime)
+        {
+            return;
+        }
+
+        nextInspectorRefreshTime = Time.unscaledTime + InspectorRefreshInterval;
+        EnsureInspectorTextures(mapSize, visibility);
+
+        for (int index = 1; index < inspectorChannels.Count; index++)
+        {
+            FillInspectorChannel(inspectorChannels[index], new Color(0.018f, 0.026f, 0.034f, 1f));
+        }
+
+        int playerUnits = 0;
+        int enemyUnits = 0;
+        int movingUnits = 0;
+        int engagedUnits = 0;
+        int deployedArtillery = 0;
+        int garrisonedUnits = 0;
+        int queuedUnits = 0;
+
+        foreach (BuildingData building in buildings)
+        {
+            if (building == null)
+            {
+                continue;
+            }
+
+            queuedUnits += building.ProductionQueueCount;
+            garrisonedUnits += building.GarrisonedUnits.Count;
+            Color teamColor = building.Team == Team.Player
+                ? new Color(0.12f, 0.55f, 0.92f, 1f)
+                : new Color(0.95f, 0.18f, 0.16f, 1f);
+            Color occupancyColor = building.Type == BuildingType.Garrison
+                ? new Color(0.1f, 0.82f, 0.82f, 1f)
+                : building.Type == BuildingType.Factory
+                    ? new Color(0.18f, 0.85f, 0.4f, 1f)
+                    : teamColor;
+
+            PaintCells(inspectorChannels[1], building.OccupiedCells, occupancyColor);
+            PaintCells(inspectorChannels[2], building.OccupiedCells, teamColor);
+            PaintCells(
+                inspectorChannels[3],
+                building.OccupiedCells,
+                GetHealthColor(building.HitPoints, building.MaxHitPoints)
+            );
+
+            if (building == selectedBuilding)
+            {
+                PaintCells(inspectorChannels[4], building.OccupiedCells, Color.white);
+            }
+
+            if (building.Type == BuildingType.Garrison)
+            {
+                float load = building.GarrisonCapacity > 0
+                    ? (float)building.GarrisonedUnits.Count / building.GarrisonCapacity
+                    : 0f;
+                PaintCells(
+                    inspectorChannels[5],
+                    building.OccupiedCells,
+                    Color.Lerp(
+                        new Color(0.04f, 0.2f, 0.22f, 1f),
+                        new Color(0.1f, 1f, 0.9f, 1f),
+                        load
+                    )
+                );
+            }
+        }
+
+        foreach (UnitData unit in units)
+        {
+            if (unit == null)
+            {
+                continue;
+            }
+
+            if (unit.Team == Team.Player)
+            {
+                playerUnits++;
+            }
+            else
+            {
+                enemyUnits++;
+            }
+
+            movingUnits += unit.IsMoving ? 1 : 0;
+            bool engaged = unit.AttackTarget != null || unit.AttackUnitTarget != null;
+            engagedUnits += engaged ? 1 : 0;
+            deployedArtillery += unit.Type == UnitType.Artillery && unit.IsDeployed ? 1 : 0;
+
+            Color teamColor = unit.Team == Team.Player
+                ? unit.Type == UnitType.Artillery
+                    ? new Color(0.8f, 0.35f, 1f, 1f)
+                    : new Color(1f, 0.9f, 0.12f, 1f)
+                : new Color(1f, 0.3f, 0.12f, 1f);
+            PaintCell(inspectorChannels[1], unit.Cell, new Color(0.42f, 0.48f, 0.52f, 1f));
+            PaintCell(inspectorChannels[2], unit.Cell, teamColor, 1);
+            PaintCell(
+                inspectorChannels[3],
+                unit.Cell,
+                GetHealthColor(unit.HitPoints, unit.MaxHitPoints),
+                1
+            );
+
+            if (selectedUnits.Contains(unit))
+            {
+                PaintCell(inspectorChannels[4], unit.Cell, Color.white, 1);
+
+                if (unit.IsMoving)
+                {
+                    PaintCell(inspectorChannels[4], unit.TargetCell, new Color(0.15f, 0.75f, 1f, 1f), 1);
+                }
+            }
+
+            if (unit.AttackTarget != null)
+            {
+                PaintCells(
+                    inspectorChannels[4],
+                    unit.AttackTarget.OccupiedCells,
+                    new Color(1f, 0.18f, 0.12f, 1f)
+                );
+            }
+
+            if (unit.AttackUnitTarget != null)
+            {
+                PaintCell(
+                    inspectorChannels[4],
+                    unit.AttackUnitTarget.Cell,
+                    new Color(1f, 0.18f, 0.12f, 1f),
+                    1
+                );
+            }
+
+            Color tacticalColor = unit.GarrisonBuilding != null
+                ? new Color(0.1f, 1f, 0.88f, 1f)
+                : unit.Type == UnitType.Artillery
+                    ? unit.IsDeployed
+                        ? new Color(0.9f, 0.25f, 1f, 1f)
+                        : new Color(0.3f, 0.55f, 1f, 1f)
+                    : engaged
+                        ? new Color(1f, 0.5f, 0.08f, 1f)
+                        : unit.IsMoving
+                            ? new Color(0.2f, 0.75f, 1f, 1f)
+                            : new Color(0.25f, 0.34f, 0.4f, 1f);
+            PaintCell(inspectorChannels[5], unit.Cell, tacticalColor, 1);
+        }
+
+        for (int index = 1; index < inspectorChannels.Count; index++)
+        {
+            ApplyInspectorChannel(inspectorChannels[index]);
+        }
+
+        float fps = Time.smoothDeltaTime > 0.0001f
+            ? 1f / Time.smoothDeltaTime
+            : 0f;
+        inspectorMetricsText.text =
+            $"FRAME {Time.frameCount:000000}    T+ {matchTime:000.0}s    FPS {fps:00.0}    " +
+            $"RES {resources:0000}    ENTITIES {buildings.Count + units.Count:000}";
+        inspectorStateText.text =
+            "SIMULATION STATE  //  GROUND-TRUTH DEBUG VIEW\n" +
+            $"PLAYER UNITS  {playerUnits:00}     ENEMY UNITS  {enemyUnits:00}     SELECTED  {selectedUnits.Count:00}     QUEUED  {queuedUnits:00}\n" +
+            $"MOVING  {movingUnits:00}     ENGAGED  {engagedUnits:00}     ARTILLERY DEPLOYED  {deployedArtillery:00}     GARRISONED  {garrisonedUnits:00}\n\n" +
+            "LEGEND   PLAYER ■   ENEMY ■   ARTILLERY ■   GARRISON ■   SELECTED ■\n" +
+            "NOTE     Visibility is agent-observable; remaining channels expose simulation truth for debugging.";
+    }
+
+    private void EnsureInspectorTextures(int mapSize, RtsVisibilitySystem visibility)
+    {
+        if (inspectorChannels.Count != 6)
+        {
+            return;
+        }
+
+        inspectorChannels[0].Image.texture = visibility?.FogTexture;
+        int textureSize = Mathf.Max(1, mapSize);
+
+        for (int index = 1; index < inspectorChannels.Count; index++)
+        {
+            InspectorChannel channel = inspectorChannels[index];
+
+            if (channel.Texture != null &&
+                channel.Texture.width == textureSize &&
+                channel.Texture.height == textureSize)
+            {
+                continue;
+            }
+
+            Release(channel.Texture);
+            channel.Texture = new Texture2D(
+                textureSize,
+                textureSize,
+                TextureFormat.RGBA32,
+                false
+            )
+            {
+                name = $"ArenaInspectorChannel{index}",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            channel.Pixels = new Color[textureSize * textureSize];
+            channel.Image.texture = channel.Texture;
+        }
+    }
+
+    private static void FillInspectorChannel(InspectorChannel channel, Color color)
+    {
+        if (channel.Pixels == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < channel.Pixels.Length; index++)
+        {
+            channel.Pixels[index] = color;
+        }
+    }
+
+    private static void PaintCells(
+        InspectorChannel channel,
+        IEnumerable<Vector2Int> cells,
+        Color color
+    )
+    {
+        foreach (Vector2Int cell in cells)
+        {
+            PaintCell(channel, cell, color);
+        }
+    }
+
+    private static void PaintCell(
+        InspectorChannel channel,
+        Vector2Int cell,
+        Color color,
+        int radius = 0
+    )
+    {
+        if (channel.Texture == null || channel.Pixels == null)
+        {
+            return;
+        }
+
+        for (int y = cell.y - radius; y <= cell.y + radius; y++)
+        {
+            for (int x = cell.x - radius; x <= cell.x + radius; x++)
+            {
+                if (x < 0 || y < 0 || x >= channel.Texture.width || y >= channel.Texture.height)
+                {
+                    continue;
+                }
+
+                channel.Pixels[y * channel.Texture.width + x] = color;
+            }
+        }
+    }
+
+    private static void ApplyInspectorChannel(InspectorChannel channel)
+    {
+        if (channel.Texture == null || channel.Pixels == null)
+        {
+            return;
+        }
+
+        channel.Texture.SetPixels(channel.Pixels);
+        channel.Texture.Apply(false);
+    }
+
+    private static Color GetHealthColor(int hitPoints, int maxHitPoints)
+    {
+        float ratio = maxHitPoints > 0
+            ? Mathf.Clamp01((float)hitPoints / maxHitPoints)
+            : 0f;
+        return Color.Lerp(
+            new Color(0.95f, 0.08f, 0.08f, 1f),
+            new Color(0.15f, 0.95f, 0.35f, 1f),
+            ratio
+        );
     }
 
     private GameObject CreatePanel(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax, Color color)
