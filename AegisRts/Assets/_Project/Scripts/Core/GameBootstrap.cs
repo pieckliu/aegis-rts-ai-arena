@@ -1584,6 +1584,7 @@ public class GameBootstrap : MonoBehaviour
 
             if (!gridMap.TryFindOpenCellNear(
                     targetBuilding.Cell,
+                    unit.Cell,
                     out Vector2Int approachCell
                 ))
             {

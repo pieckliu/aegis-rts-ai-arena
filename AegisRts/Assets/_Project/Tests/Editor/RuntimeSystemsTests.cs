@@ -625,6 +625,45 @@ public sealed class RuntimeSystemsTests
     }
 
     [Test]
+    public void Movement_CombatPursuitDetoursAroundBuildingFootprint()
+    {
+        RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
+        config.MapSize = 12;
+        config.CellSize = 1f;
+        config.UnitMoveSpeed = 2f;
+        GridMapService gridMap = new GridMapService(config.MapSize, config.CellSize);
+        UnitData unit = CreateUnitAt(gridMap, new Vector2Int(2, 5), "Pursuer");
+        unit.Id = 2;
+        List<Vector2Int> footprint = gridMap.GetSquareFootprint(
+            new Vector2Int(5, 5),
+            1
+        );
+        Assert.IsTrue(gridMap.TryOccupy(footprint));
+        UnitMovementSystem movement = new UnitMovementSystem(
+            config,
+            gridMap,
+            new List<UnitData> { unit }
+        );
+        Vector2 target = gridMap.CellToWorld(new Vector2Int(9, 5));
+
+        for (int tick = 0; tick < 100; tick++)
+        {
+            movement.MoveTowards(unit, target, 0.1f);
+            Assert.IsFalse(
+                footprint.Contains(gridMap.WorldToCell(unit.Position)),
+                "Combat pursuit must not enter an occupied building footprint."
+            );
+        }
+
+        Assert.Greater(
+            unit.Position.x,
+            gridMap.CellToWorld(new Vector2Int(7, 5)).x,
+            "A combat pursuer should travel around a blocking building instead of stopping behind it."
+        );
+        Object.DestroyImmediate(config);
+    }
+
+    [Test]
     public void Economy_ResetIncomeAndSpending_AreDeterministic()
     {
         RtsGameConfig config = ScriptableObject.CreateInstance<RtsGameConfig>();
@@ -742,6 +781,27 @@ public sealed class RuntimeSystemsTests
             "TRAIN ARTILLERY (0/5)",
             RtsGameUIController.GetProductionButtonText(
                 factory,
+                UnitType.Artillery,
+                5
+            )
+        );
+    }
+
+    [Test]
+    public void CommandPanel_KeepsProductionButtonsDistinctWithoutSelectedFactory()
+    {
+        Assert.AreEqual(
+            "TRAIN INFANTRY",
+            RtsGameUIController.GetProductionButtonText(
+                null,
+                UnitType.Infantry,
+                5
+            )
+        );
+        Assert.AreEqual(
+            "TRAIN ARTILLERY",
+            RtsGameUIController.GetProductionButtonText(
+                null,
                 UnitType.Artillery,
                 5
             )

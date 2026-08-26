@@ -38,9 +38,11 @@ internal sealed class RtsGameUIController
     private readonly Canvas canvas;
     private readonly GameObject menuPanel;
     private readonly GameObject hudPanel;
+    private readonly GameObject worldOverlay;
     private readonly GameObject commandPanel;
     private readonly GameObject overlayPanel;
     private readonly Text resourceText;
+    private readonly RectTransform resourceTextRect;
     private readonly Text infoText;
     private readonly Text overlayTitle;
     private readonly Button cancelBuildButton;
@@ -55,6 +57,7 @@ internal sealed class RtsGameUIController
     private readonly RectTransform productionFill;
     private readonly Text productionText;
     private readonly GameObject notificationPanel;
+    private readonly RectTransform notificationRect;
     private readonly Text notificationText;
     private readonly RectTransform selectionRect;
     private readonly GameObject minimapPanel;
@@ -118,8 +121,11 @@ internal sealed class RtsGameUIController
         CreateButton("Start", menuPanel.transform, "START GAME", new Vector2(0.4f, 0.42f), new Vector2(0.6f, 0.50f), startGame);
 
         hudPanel = CreatePanel("Hud", canvasObject.transform, Vector2.zero, Vector2.one, Color.clear);
-        resourceText = CreateText("Resources", hudPanel.transform, string.Empty, 21, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.93f), new Vector2(0.76f, 0.985f));
-        commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.30f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 0.94f));
+        worldOverlay = CreatePanel("WorldOverlay", hudPanel.transform, Vector2.zero, Vector2.one, Color.clear);
+        worldOverlay.GetComponent<Image>().raycastTarget = false;
+        resourceText = CreateText("Resources", hudPanel.transform, string.Empty, 18, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.93f), new Vector2(0.64f, 0.985f));
+        resourceTextRect = resourceText.GetComponent<RectTransform>();
+        commandPanel = CreatePanel("CommandPanel", hudPanel.transform, new Vector2(0.79f, 0.30f), new Vector2(0.985f, 0.97f), new Color(0.04f, 0.055f, 0.075f, 1f));
         CreateText("PanelTitle", commandPanel.transform, "COMMAND PANEL", 26, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.91f), new Vector2(0.92f, 0.98f));
         CreateButton("BuildFactory", commandPanel.transform, "BUILD FACTORY", new Vector2(0.08f, 0.81f), new Vector2(0.92f, 0.89f), selectFactory);
         CreateButton("BuildGarrison", commandPanel.transform, "BUILD GARRISON", new Vector2(0.08f, 0.72f), new Vector2(0.92f, 0.80f), selectGarrison);
@@ -170,6 +176,7 @@ internal sealed class RtsGameUIController
             new Color(0.05f, 0.24f, 0.36f, 0.96f)
         );
         notificationPanel.GetComponent<Image>().raycastTarget = false;
+        notificationRect = notificationPanel.GetComponent<RectTransform>();
         notificationText = CreateText(
             "NotificationText",
             notificationPanel.transform,
@@ -229,7 +236,7 @@ internal sealed class RtsGameUIController
         viewport.GetComponent<Image>().raycastTarget = false;
         minimapViewport = viewport.GetComponent<RectTransform>();
 
-        GameObject selection = CreatePanel("SelectionRectangle", hudPanel.transform, Vector2.zero, Vector2.zero, new Color(0.15f, 0.7f, 1f, 0.2f));
+        GameObject selection = CreatePanel("SelectionRectangle", worldOverlay.transform, Vector2.zero, Vector2.zero, new Color(0.15f, 0.7f, 1f, 0.2f));
         selectionRect = selection.GetComponent<RectTransform>();
         selectionRect.anchorMin = Vector2.zero;
         selectionRect.anchorMax = Vector2.zero;
@@ -340,8 +347,8 @@ internal sealed class RtsGameUIController
         }
 
         resourceText.text = inspectorVisible
-            ? $"RES {resources:0000}   TIME {matchTime:000.0}s   F2 CLOSE INSPECTOR"
-            : $"RES {resources}  FACTORY {factoryCost}  GARRISON {garrisonCost}  INFANTRY {infantryCost}  ARTILLERY {artilleryCost}  WASD PAN / M OVERVIEW / F2 INSPECTOR / ESC PAUSE";
+            ? $"RES {resources:0000}   TIME {matchTime:000.0}s   F2 CLOSE"
+            : $"RES {resources:0000}   COST F{factoryCost} G{garrisonCost} I{infantryCost} A{artilleryCost}   WASD PAN / M MAP / F2 VIEW / ESC PAUSE";
         cancelBuildButton.gameObject.SetActive(buildMode != BuildingType.None);
         bool factorySelected = selectedBuilding != null && selectedBuilding.Type == BuildingType.Factory;
         trainButton.interactable = factorySelected;
@@ -485,6 +492,17 @@ internal sealed class RtsGameUIController
         inspectorPanel.SetActive(visible);
         commandPanel.SetActive(!visible);
         inspectorToggleButton.gameObject.SetActive(!visible);
+        resourceTextRect.anchorMax = new Vector2(visible ? 0.47f : 0.64f, 0.985f);
+        resourceTextRect.offsetMin = Vector2.zero;
+        resourceTextRect.offsetMax = Vector2.zero;
+        notificationRect.anchorMin = visible
+            ? new Vector2(0.04f, 0.86f)
+            : new Vector2(0.32f, 0.86f);
+        notificationRect.anchorMax = visible
+            ? new Vector2(0.44f, 0.92f)
+            : new Vector2(0.68f, 0.92f);
+        notificationRect.offsetMin = Vector2.zero;
+        notificationRect.offsetMax = Vector2.zero;
         RectTransform minimapRect = minimapPanel.GetComponent<RectTransform>();
         minimapRect.anchorMin = new Vector2(0.02f, 0.035f);
         minimapRect.anchorMax = visible
@@ -545,7 +563,9 @@ internal sealed class RtsGameUIController
         if (selectedBuilding == null ||
             selectedBuilding.Type != BuildingType.Factory)
         {
-            return "SELECT A FACTORY";
+            return unitType == UnitType.Artillery
+                ? "TRAIN ARTILLERY"
+                : "TRAIN INFANTRY";
         }
 
         int queuedCount = unitType == UnitType.Artillery
@@ -918,7 +938,7 @@ internal sealed class RtsGameUIController
 
         if (!healthViews.TryGetValue(key, out HealthView view))
         {
-            GameObject root = CreatePanel("HealthBar", hudPanel.transform, Vector2.zero, Vector2.zero, new Color(0.18f, 0.02f, 0.02f, 0.9f));
+            GameObject root = CreatePanel("HealthBar", worldOverlay.transform, Vector2.zero, Vector2.zero, new Color(0.18f, 0.02f, 0.02f, 0.9f));
             RectTransform rootRect = root.GetComponent<RectTransform>();
             rootRect.anchorMin = Vector2.zero;
             rootRect.anchorMax = Vector2.zero;
