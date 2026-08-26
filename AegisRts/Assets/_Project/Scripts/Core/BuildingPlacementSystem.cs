@@ -20,7 +20,15 @@ internal sealed class BuildingPlacementSystem
 
     public int GetCost(BuildingType buildingType)
     {
-        return buildingType == BuildingType.Factory ? config.FactoryCost : 0;
+        switch (buildingType)
+        {
+            case BuildingType.Factory:
+                return config.FactoryCost;
+            case BuildingType.Garrison:
+                return config.GarrisonCost;
+            default:
+                return 0;
+        }
     }
 
     public bool CanAfford(BuildingType buildingType)
@@ -37,7 +45,10 @@ internal sealed class BuildingPlacementSystem
     {
         List<Vector2Int> footprint = GetFootprint(buildingType, cell);
 
-        return buildingType == BuildingType.Factory &&
+        bool isConstructible = buildingType == BuildingType.Factory ||
+            buildingType == BuildingType.Garrison;
+
+        return isConstructible &&
             gridMap.IsCellInside(cell) &&
             gridMap.IsWorldInside(worldPosition) &&
             CanAfford(buildingType) &&
@@ -78,9 +89,21 @@ internal sealed class BuildingPlacementSystem
         Vector2Int centerCell
     )
     {
-        int footprintRadius = buildingType == BuildingType.Factory
-            ? config.FactoryFootprintRadius
-            : config.BaseFootprintRadius;
+        int footprintRadius;
+
+        switch (buildingType)
+        {
+            case BuildingType.Factory:
+                footprintRadius = config.FactoryFootprintRadius;
+                break;
+            case BuildingType.Garrison:
+                footprintRadius = config.GarrisonFootprintRadius;
+                break;
+            default:
+                footprintRadius = config.BaseFootprintRadius;
+                break;
+        }
+
         return gridMap.GetSquareFootprint(centerCell, footprintRadius);
     }
 }

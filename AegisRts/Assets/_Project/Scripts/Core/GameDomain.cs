@@ -11,7 +11,8 @@ internal enum BuildingType
 {
     None,
     Base,
-    Factory
+    Factory,
+    Garrison
 }
 
 internal enum UnitType
@@ -45,6 +46,9 @@ internal sealed class BuildingData
     public int InfantryQueue => CountQueued(UnitType.Infantry);
     public int ArtilleryQueue => CountQueued(UnitType.Artillery);
     public int ProductionQueueCount => ProductionQueue.Count;
+    public readonly List<UnitData> GarrisonedUnits = new List<UnitData>();
+    public int GarrisonCapacity;
+    public float GarrisonDamageMultiplier = 1f;
     public UnitType CurrentProductionType => ProductionQueue.Count > 0
         ? ProductionQueue[0]
         : UnitType.Infantry;
@@ -124,6 +128,8 @@ internal sealed class UnitData
     public float MoveSpeed;
     public float BuildingDamageMultiplier;
     public bool IsDeployed;
+    public BuildingData GarrisonTarget;
+    public BuildingData GarrisonBuilding;
     public BuildingData AttackTarget;
     public UnitData AttackUnitTarget;
 

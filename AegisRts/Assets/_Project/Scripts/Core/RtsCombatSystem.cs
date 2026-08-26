@@ -10,6 +10,7 @@ internal sealed class RtsCombatSystem
     private readonly Action<UnitData, Vector2> moveTowards;
     private readonly RtsEntityLifecycle lifecycle;
     private readonly Action<CombatFeedbackEvent> publishFeedback;
+    private readonly Action<UnitData, UnitData> publishTargetAcquired;
 
     public RtsCombatSystem(
         RtsGameConfig gameConfig,
@@ -17,7 +18,8 @@ internal sealed class RtsCombatSystem
         IList<UnitData> unitList,
         Action<UnitData, Vector2> movement,
         RtsEntityLifecycle entityLifecycle,
-        Action<CombatFeedbackEvent> feedback = null
+        Action<CombatFeedbackEvent> feedback = null,
+        Action<UnitData, UnitData> targetAcquired = null
     )
     {
         config = gameConfig;
@@ -26,6 +28,7 @@ internal sealed class RtsCombatSystem
         moveTowards = movement;
         lifecycle = entityLifecycle;
         publishFeedback = feedback;
+        publishTargetAcquired = targetAcquired;
     }
 
     public void Tick(float deltaTime)
@@ -64,7 +67,9 @@ internal sealed class RtsCombatSystem
 
         foreach (UnitData candidate in units)
         {
-            if (candidate == null || candidate.Team == source.Team)
+            if (candidate == null ||
+                candidate.Team == source.Team ||
+                candidate.GarrisonBuilding != null)
             {
                 continue;
             }
@@ -83,24 +88,32 @@ internal sealed class RtsCombatSystem
             return;
         }
 
+        bool changedTarget = source.AttackUnitTarget != nearest;
         source.AttackUnitTarget = nearest;
         source.AttackTarget = null;
         source.IsMoving = false;
         source.Waypoints.Clear();
+
+        if (changedTarget)
+        {
+            publishTargetAcquired?.Invoke(source, nearest);
+        }
     }
 
     private void AttackUnit(UnitData attacker, float deltaTime)
     {
         UnitData target = attacker.AttackUnitTarget;
 
-        if (target == null || !units.Contains(target))
+        if (target == null ||
+            !units.Contains(target) ||
+            target.GarrisonBuilding != null)
         {
             attacker.AttackUnitTarget = null;
             return;
         }
 
         bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
-            attacker.AttackRange + attacker.Radius + target.Radius;
+            attacker.AttackRange + GetAttackOriginRadius(attacker) + target.Radius;
 
         if (!inRange)
         {
@@ -125,10 +138,12 @@ internal sealed class RtsCombatSystem
         }
 
         attacker.AttackTimer = attacker.AttackCooldown;
-        int damage = attacker.AttackDamage;
+        int damage = GetAttackDamage(attacker);
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
             attacker,
+            target.Id,
+            target.Team,
             target.Position,
             target.GameObject,
             damage,
@@ -153,7 +168,7 @@ internal sealed class RtsCombatSystem
         }
 
         bool inRange = Vector2.Distance(attacker.Position, target.Position) <=
-            attacker.AttackRange + attacker.Radius + target.Radius;
+            attacker.AttackRange + GetAttackOriginRadius(attacker) + target.Radius;
 
         if (!inRange)
         {
@@ -179,11 +194,13 @@ internal sealed class RtsCombatSystem
 
         attacker.AttackTimer = attacker.AttackCooldown;
         int damage = Mathf.RoundToInt(
-            attacker.AttackDamage * attacker.BuildingDamageMultiplier
+            GetAttackDamage(attacker) * attacker.BuildingDamageMultiplier
         );
         target.HitPoints = ArenaGameRules.ApplyDamage(target.HitPoints, damage);
         PublishFeedback(
             attacker,
+            target.Id,
+            target.Team,
             target.Position,
             target.GameObject,
             damage,
@@ -199,6 +216,8 @@ internal sealed class RtsCombatSystem
 
     private void PublishFeedback(
         UnitData attacker,
+        int targetId,
+        Team targetTeam,
         Vector2 targetPosition,
         GameObject targetObject,
         int damage,
@@ -210,7 +229,10 @@ internal sealed class RtsCombatSystem
             targetPosition,
             attacker.GameObject,
             targetObject,
+            attacker.Id,
+            targetId,
             attacker.Team,
+            targetTeam,
             damage,
             isLethal
         ));
@@ -218,6 +240,22 @@ internal sealed class RtsCombatSystem
 
     private static bool RequiresStationaryDeployment(UnitData unit)
     {
-        return unit.Type == UnitType.Artillery && unit.IsDeployed;
+        return unit.GarrisonBuilding != null ||
+            (unit.Type == UnitType.Artillery && unit.IsDeployed);
+    }
+
+    private static float GetAttackOriginRadius(UnitData unit)
+    {
+        return unit.GarrisonBuilding != null
+            ? unit.GarrisonBuilding.Radius
+            : unit.Radius;
+    }
+
+    private static int GetAttackDamage(UnitData unit)
+    {
+        float multiplier = unit.GarrisonBuilding != null
+            ? unit.GarrisonBuilding.GarrisonDamageMultiplier
+            : 1f;
+        return Mathf.RoundToInt(unit.AttackDamage * multiplier);
     }
 }

@@ -17,6 +17,14 @@ internal sealed class UnitMovementSystem
         new Vector2(0.7071f, -0.7071f),
         new Vector2(-0.7071f, -0.7071f)
     };
+    private static readonly Vector2[] CombatPursuitDirectionWeights =
+    {
+        new Vector2(1f, 0f),
+        new Vector2(1f, 1f),
+        new Vector2(0f, 1f),
+        new Vector2(1f, -1f),
+        new Vector2(0f, -1f)
+    };
 
     private readonly RtsGameConfig config;
     private readonly GridMapService gridMap;
@@ -53,6 +61,7 @@ internal sealed class UnitMovementSystem
         {
             if (unit == null ||
                 unit.Team != Team.Player ||
+                unit.GarrisonBuilding != null ||
                 (unit.Type == UnitType.Artillery && unit.IsDeployed))
             {
                 continue;
@@ -88,7 +97,7 @@ internal sealed class UnitMovementSystem
 
         foreach (UnitData unit in units)
         {
-            if (unit != null)
+            if (unit != null && unit.GarrisonBuilding == null)
             {
                 obstacleCells.Remove(unit.Cell);
             }
@@ -142,6 +151,7 @@ internal sealed class UnitMovementSystem
 
             unit.AttackTarget = null;
             unit.AttackUnitTarget = null;
+            unit.GarrisonTarget = null;
             unit.Cell = targetCell;
             unit.TargetCell = targetCell;
             unit.TargetPosition = targetPosition;
@@ -303,22 +313,20 @@ internal sealed class UnitMovementSystem
     public void MoveTowards(UnitData unit, Vector2 targetPosition, float deltaTime)
     {
         if (unit == null ||
+            unit.GarrisonBuilding != null ||
             (unit.Type == UnitType.Artillery && unit.IsDeployed))
         {
             return;
         }
 
         RebuildCollisionObstacleCells();
-        Vector2 nextPosition = Vector2.MoveTowards(
-            unit.Position,
-            targetPosition,
-            GetMoveSpeed(unit) * deltaTime
-        );
+        float stepDistance = GetMoveSpeed(unit) * deltaTime;
 
-        if (!IsPositionClear(
-                nextPosition,
-                unit.Radius,
-                collisionObstacleCells
+        if (!TryFindCombatPursuitStep(
+                unit,
+                targetPosition,
+                stepDistance,
+                out Vector2 nextPosition
             ))
         {
             return;
@@ -326,6 +334,55 @@ internal sealed class UnitMovementSystem
 
         ApplyPosition(unit, nextPosition);
         SyncCombatCell(unit);
+    }
+
+    private bool TryFindCombatPursuitStep(
+        UnitData unit,
+        Vector2 targetPosition,
+        float stepDistance,
+        out Vector2 nextPosition
+    )
+    {
+        nextPosition = unit.Position;
+        Vector2 toTarget = targetPosition - unit.Position;
+
+        if (stepDistance <= 0f || toTarget.sqrMagnitude <= 0.0001f)
+        {
+            return false;
+        }
+
+        Vector2 forward = toTarget.normalized;
+        Vector2 perpendicular = new Vector2(-forward.y, forward.x);
+        float preferredSide = (unit.Id & 1) == 0 ? 1f : -1f;
+        float currentDistance = toTarget.magnitude;
+
+        foreach (Vector2 weights in CombatPursuitDirectionWeights)
+        {
+            Vector2 direction = (
+                forward * weights.x +
+                perpendicular * weights.y * preferredSide
+            ).normalized;
+            Vector2 candidate = ClampUnitPosition(
+                unit.Position + direction * Mathf.Min(stepDistance, currentDistance),
+                unit.Radius
+            );
+
+            if (candidate == unit.Position ||
+                Vector2.Distance(candidate, targetPosition) > currentDistance + stepDistance * 0.25f ||
+                !IsPositionClear(
+                    candidate,
+                    unit.Radius,
+                    collisionObstacleCells
+                ))
+            {
+                continue;
+            }
+
+            nextPosition = candidate;
+            return true;
+        }
+
+        return false;
     }
 
     public void Stop(UnitData unit)
@@ -406,9 +463,9 @@ internal sealed class UnitMovementSystem
 
             for (int firstIndex = 0; firstIndex < units.Count; firstIndex++)
             {
-                UnitData first = units[firstIndex];
+            UnitData first = units[firstIndex];
 
-                if (first == null)
+                if (first == null || first.GarrisonBuilding != null)
                 {
                     continue;
                 }
@@ -417,7 +474,7 @@ internal sealed class UnitMovementSystem
                 {
                     UnitData second = units[secondIndex];
 
-                    if (second == null)
+                    if (second == null || second.GarrisonBuilding != null)
                     {
                         continue;
                     }
@@ -518,7 +575,7 @@ internal sealed class UnitMovementSystem
 
         foreach (UnitData unit in units)
         {
-            if (unit != null)
+            if (unit != null && unit.GarrisonBuilding == null)
             {
                 collisionObstacleCells.Remove(unit.Cell);
             }

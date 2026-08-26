@@ -32,7 +32,15 @@ internal sealed class RtsEntityLifecycle
             return;
         }
 
-        occupiedCells.Remove(unit.Cell);
+        if (unit.GarrisonBuilding != null)
+        {
+            unit.GarrisonBuilding.GarrisonedUnits.Remove(unit);
+            unit.GarrisonBuilding = null;
+        }
+        else
+        {
+            occupiedCells.Remove(unit.Cell);
+        }
 
         foreach (UnitData other in units)
         {
@@ -67,6 +75,11 @@ internal sealed class RtsEntityLifecycle
             if (unit.AttackTarget == building)
             {
                 unit.AttackTarget = null;
+            }
+
+            if (unit.GarrisonTarget == building)
+            {
+                unit.GarrisonTarget = null;
             }
         }
 

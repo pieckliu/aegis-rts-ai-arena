@@ -28,6 +28,7 @@ Playable Unity vertical slice:
 - explore an expanded 48×48 battlefield that opens around the player base;
 - place 3×3-footprint bases and factories that block movement and constrain base layouts;
 - spend and regenerate resources, then train infantry or deployable long-range artillery;
+- construct garrison buildings, move up to four infantry inside, and gain a 50% attack-damage bonus while defending from them;
 - use a shared ordered factory queue and wait when every footprint-adjacent exit is blocked;
 - select, box-select, drag friendly units to move, and command groups to attack;
 - interrupt infantry combat with a new move order so player-controlled units can retreat;
@@ -36,8 +37,11 @@ Playable Unity vertical slice:
 - start focused directly on the player-base side of the battlefield, then pan and zoom the bounded camera;
 - explore a three-state fog of war driven by player building and unit sight;
 - use a live tactical minimap with real-time friendly tracking and fading last-known enemy contacts, click or drag it to navigate, and press `M` to toggle the fog-respecting strategic overview;
+- press `F2` or use the visible AI-observatory button to open a professional split-screen Arena Inspector with six live observation/debug channels and simulation metrics;
+- optionally reset into a deterministic one-shot showcase containing moving infantry, a loaded garrison, deployed artillery, and an enemy contact group for screenshots and recordings;
+- inspect a live action log, current objective, showcase phase, damage, kills, orders, and enemy-wave telemetry without coupling UI state back into the simulation;
 - read player bases, factories, infantry, artillery, and enemies as distinct symbolic dots;
-- use a runtime uGUI menu, command panel, overlays, selection rectangle, and health bars;
+- use a consistent English-language runtime presentation across the uGUI menu, command panel, notifications, world labels, overlays, and Arena Inspector;
 - fight an automatically spawning enemy army;
 - win, lose, pause, restart, and return to the menu;
 - query structured match observations and submit agent actions through the Arena API.

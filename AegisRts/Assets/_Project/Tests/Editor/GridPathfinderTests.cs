@@ -46,4 +46,28 @@ public sealed class GridPathfinderTests
 
         Assert.IsEmpty(path);
     }
+
+    [Test]
+    public void FindOpenCellNear_SelectsBuildingApproachClosestToUnit()
+    {
+        GridMapService gridMap = new GridMapService(12, 1f);
+        Vector2Int buildingCell = new Vector2Int(5, 5);
+        Assert.IsTrue(gridMap.TryOccupy(
+            gridMap.GetSquareFootprint(buildingCell, 1)
+        ));
+
+        Assert.IsTrue(gridMap.TryFindOpenCellNear(
+            buildingCell,
+            new Vector2Int(5, 10),
+            out Vector2Int approachFromAbove
+        ));
+        Assert.AreEqual(new Vector2Int(5, 7), approachFromAbove);
+
+        Assert.IsTrue(gridMap.TryFindOpenCellNear(
+            buildingCell,
+            new Vector2Int(0, 5),
+            out Vector2Int approachFromLeft
+        ));
+        Assert.AreEqual(new Vector2Int(3, 5), approachFromLeft);
+    }
 }

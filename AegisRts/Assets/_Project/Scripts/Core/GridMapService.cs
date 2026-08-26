@@ -194,4 +194,58 @@ internal sealed class GridMapService
         openCell = originCell;
         return false;
     }
+
+    public bool TryFindOpenCellNear(
+        Vector2Int originCell,
+        Vector2Int preferredCell,
+        out Vector2Int openCell
+    )
+    {
+        int maximumRadius = Mathf.Min(SpawnSearchRadius, MapSize - 1);
+
+        for (int radius = 1; radius <= maximumRadius; radius++)
+        {
+            bool foundCandidate = false;
+            int bestDistance = int.MaxValue;
+            Vector2Int bestCandidate = originCell;
+
+            for (int x = -radius; x <= radius; x++)
+            {
+                for (int y = -radius; y <= radius; y++)
+                {
+                    if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(y)) != radius)
+                    {
+                        continue;
+                    }
+
+                    Vector2Int candidate = originCell + new Vector2Int(x, y);
+
+                    if (!IsCellInside(candidate) || IsOccupied(candidate))
+                    {
+                        continue;
+                    }
+
+                    int distance = (candidate - preferredCell).sqrMagnitude;
+
+                    if (foundCandidate && distance >= bestDistance)
+                    {
+                        continue;
+                    }
+
+                    foundCandidate = true;
+                    bestDistance = distance;
+                    bestCandidate = candidate;
+                }
+            }
+
+            if (foundCandidate)
+            {
+                openCell = bestCandidate;
+                return true;
+            }
+        }
+
+        openCell = originCell;
+        return false;
+    }
 }

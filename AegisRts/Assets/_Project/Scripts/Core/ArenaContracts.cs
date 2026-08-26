@@ -28,6 +28,10 @@ public sealed class ArenaEntityObservation
     public float ProductionProgress;
     public ArenaCellObservation[] OccupiedCells;
     public bool IsDeployed;
+    public int GarrisonCount;
+    public int GarrisonCapacity;
+    public float GarrisonDamageMultiplier;
+    public int GarrisonBuildingId;
 }
 
 [Serializable]

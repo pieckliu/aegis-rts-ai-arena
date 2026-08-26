@@ -19,6 +19,10 @@ MonoBehaviour:
   BuildRadius: 7
   BuildingRadius: 1.05
   FactoryFootprintRadius: 1
+  GarrisonFootprintRadius: 1
+  GarrisonHitPoints: 350
+  GarrisonCapacity: 4
+  GarrisonDamageMultiplier: 1.5
   InfantryTrainingTime: 3
   ArtilleryTrainingTime: 6
   MaxFactoryQueueSize: 5
@@ -42,6 +46,7 @@ MonoBehaviour:
   EnemyInfantryAttackCooldown: 1.2
   StartingResources: 500
   FactoryCost: 150
+  GarrisonCost: 120
   InfantryCost: 50
   ArtilleryCost: 120
   PassiveResourceIncome: 10

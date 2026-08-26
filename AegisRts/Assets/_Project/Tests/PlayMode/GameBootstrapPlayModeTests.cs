@@ -28,7 +28,7 @@ public sealed class GameBootstrapPlayModeTests
         GameObject playerBase = GameObject.Find("Base");
         Assert.IsNotNull(playerBase);
         Assert.IsNotNull(playerBase.GetComponent<SpriteRenderer>()?.sprite);
-        Assert.AreEqual("基地", playerBase.GetComponentInChildren<TextMesh>()?.text);
+        Assert.AreEqual("HQ", playerBase.GetComponentInChildren<TextMesh>()?.text);
         Assert.IsNull(playerBase.GetComponent<RtsEntityViewAnimator>());
         Assert.IsNotNull(GameObject.Find("FogOfWar"));
         Assert.IsNotNull(GameObject.Find("Minimap"));
@@ -81,6 +81,44 @@ public sealed class GameBootstrapPlayModeTests
         Assert.AreEqual(0, healthBars.Length, "Undamaged and unselected buildings should not show health bars.");
 
         GameBootstrap bootstrap = Object.FindAnyObjectByType<GameBootstrap>();
+        RectTransform inspector = ui
+            .GetComponentsInChildren<RectTransform>(true)
+            .First(rect => rect.name == "ArenaInspector");
+        Button inspectorToggle = ui
+            .GetComponentsInChildren<Button>(true)
+            .First(button => button.name == "ToggleArenaInspector");
+        Assert.IsFalse(inspector.gameObject.activeSelf);
+        inspectorToggle.onClick.Invoke();
+        yield return null;
+        Assert.IsTrue(inspector.gameObject.activeSelf);
+        Assert.AreEqual(0.48f, Camera.main.rect.width, 0.001f);
+        RawImage[] inspectorChannels = inspector
+            .GetComponentsInChildren<RawImage>(true)
+            .Where(image => image.name == "ChannelImage")
+            .ToArray();
+        Assert.AreEqual(6, inspectorChannels.Length);
+        Assert.IsNotNull(
+            inspector.GetComponentsInChildren<Button>(true)
+                .First(button => button.name == "PrepareInspectorDemo")
+        );
+        Assert.IsTrue(
+            inspectorChannels.All(channel => channel.texture != null),
+            "Every inspector channel should expose a live texture."
+        );
+        Assert.IsNotEmpty(
+            inspector.Find("InspectorMetrics").GetComponent<Text>().text
+        );
+        Text inspectorLog = inspector.Find("InspectorLog").GetComponent<Text>();
+        Assert.IsNotEmpty(inspectorLog.text);
+        StringAssert.Contains("ACTION LOG", inspectorLog.text);
+        Button closeInspector = inspector
+            .GetComponentsInChildren<Button>(true)
+            .First(button => button.name == "CloseArenaInspector");
+        closeInspector.onClick.Invoke();
+        yield return null;
+        Assert.IsFalse(inspector.gameObject.activeSelf);
+        Assert.AreEqual(1f, Camera.main.rect.width, 0.001f);
+
         ArenaEntityObservation playerBaseObservation = bootstrap
             .GetArenaObservation()
             .Buildings
@@ -136,6 +174,69 @@ public sealed class GameBootstrapPlayModeTests
             "Undamaged and unselected symbolic units should not add UI clutter."
         );
         Assert.IsFalse(productionProgress.activeSelf, "Production progress should hide when the queue is empty.");
+
+        Assert.IsNotNull(GameObject.Find("BuildGarrison"));
+        ArenaActionResult buildGarrisonResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "BuildGarrison",
+                CellX = playerBaseObservation.CellX - 3,
+                CellY = playerBaseObservation.CellY + 3
+            }
+        );
+        Assert.IsTrue(buildGarrisonResult.Accepted, buildGarrisonResult.Message);
+        ArenaEntityObservation garrisonObservation = bootstrap
+            .GetArenaObservation()
+            .Buildings
+            .First(building => building.Kind == BuildingType.Garrison.ToString());
+        Assert.AreEqual(config.GarrisonCapacity, garrisonObservation.GarrisonCapacity);
+        Assert.AreEqual(
+            config.GarrisonDamageMultiplier,
+            garrisonObservation.GarrisonDamageMultiplier
+        );
+        ArenaEntityObservation infantryObservation = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Kind == UnitType.Infantry.ToString());
+        ArenaActionResult garrisonResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "Garrison",
+                UnitIds = new[] { infantryObservation.Id },
+                TargetId = garrisonObservation.Id
+            }
+        );
+        Assert.IsTrue(garrisonResult.Accepted, garrisonResult.Message);
+        yield return new WaitForSeconds(2f);
+        yield return null;
+
+        infantryObservation = bootstrap
+            .GetArenaObservation()
+            .Units
+            .First(unit => unit.Id == infantryObservation.Id);
+        Assert.AreEqual(garrisonObservation.Id, infantryObservation.GarrisonBuildingId);
+        Assert.IsFalse(infantry.activeSelf);
+        Assert.IsNotNull(
+            ui.GetComponentsInChildren<Button>(true)
+                .First(button => button.name == "EvacuateGarrison")
+        );
+
+        ArenaActionResult evacuateResult = bootstrap.ExecuteArenaAction(
+            new ArenaAction
+            {
+                Type = "EvacuateGarrison",
+                TargetId = garrisonObservation.Id
+            }
+        );
+        Assert.IsTrue(evacuateResult.Accepted, evacuateResult.Message);
+        yield return null;
+        Assert.AreEqual(
+            0,
+            bootstrap.GetArenaObservation().Units
+                .First(unit => unit.Id == infantryObservation.Id)
+                .GarrisonBuildingId
+        );
+        Assert.IsTrue(infantry.activeSelf);
 
         GameObject artilleryButton = GameObject.Find("TrainArtillery");
         Assert.IsNotNull(artilleryButton);
@@ -207,5 +308,21 @@ public sealed class GameBootstrapPlayModeTests
             initialRevealedCells,
             "Moving a friendly unit should expand the explored fog-of-war area."
         );
+
+        inspectorToggle.onClick.Invoke();
+        yield return null;
+        inspector.GetComponentsInChildren<Button>(true)
+            .First(button => button.name == "PrepareInspectorDemo")
+            .onClick.Invoke();
+        yield return new WaitForSeconds(5.2f);
+        yield return null;
+
+        StringAssert.Contains(
+            "LIVE ENGAGEMENT",
+            inspector.Find("InspectorState").GetComponent<Text>().text
+        );
+        StringAssert.Contains("ACTION LOG", inspectorLog.text);
+        Assert.GreaterOrEqual(bootstrap.GetArenaObservation().Buildings.Length, 4);
+        Assert.GreaterOrEqual(bootstrap.GetArenaObservation().Units.Length, 8);
     }
 }
